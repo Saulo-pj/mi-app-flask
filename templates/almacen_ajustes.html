@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Ajustes del almacén</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+</head>
+<body class="bg-light">
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="h4 m-0">Ajustes del almacén</h1>
+        <a href="{{ url_for('almacen') }}" class="btn btn-outline-secondary btn-sm">Volver</a>
+    </div>
+
+    {% if error %}
+        <div class="alert alert-danger">{{ error }}</div>
+    {% elif message %}
+        <div class="alert alert-{{ message_type }}">{{ message }}</div>
+    {% endif %}
+
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <p class="small text-muted">Usa esta pantalla para rotar la contraseña que permite crear productos desde el checklist. La contraseña actual es <strong>{{ creation_password_hint }}</strong> si no ha sido modificada.</p>
+            <form method="post" class="row g-3">
+                <input type="hidden" name="form_action" value="change_password">
+                <div class="col-12 col-md-4">
+                    <label class="form-label">Contraseña actual</label>
+                    <input type="password" name="current_password" class="form-control" required>
+                </div>
+                <div class="col-12 col-md-4">
+                    <label class="form-label">Nueva contraseña</label>
+                    <input type="password" name="new_password" class="form-control" required>
+                </div>
+                <div class="col-12 col-md-4">
+                    <label class="form-label">Confirmar contraseña</label>
+                    <input type="password" name="confirm_password" class="form-control" required>
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary">Guardar cambios</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mt-3">
+        <div class="card-body">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-start mb-3">
+                <div>
+                    <h2 class="h5 mb-1">Administración de usuarios</h2>
+                    <p class="small text-muted mb-0">Credenciales predeterminadas para cada módulo. Presiona para copiar usuario y contraseña.</p>
+                </div>
+            </div>
+            <div class="row g-3">
+                <div class="col-12 col-lg-4">
+                    <h3 class="h6 text-uppercase text-muted mb-2">Cocina</h3>
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for user in user_management_cocina %}
+                            <button type="button" class="btn btn-outline-secondary text-start px-3 py-2 user-card" style="min-width: 180px;" data-copy-creds data-username="{{ user.username }}" data-password="{{ user.password }}">
+                                <div class="fw-semibold">{{ user.label }}</div>
+                                <div class="small text-muted">Usuario · {{ user.username }}</div>
+                                <div class="small text-muted">Contraseña · {{ user.password }}</div>
+                                <span class="copy-feedback small text-success d-none">Copiado</span>
+                            </button>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="col-12 col-lg-4">
+                    <h3 class="h6 text-uppercase text-muted mb-2">Caja</h3>
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for user in user_management_caja %}
+                            <button type="button" class="btn btn-outline-secondary text-start px-3 py-2 user-card" style="min-width: 180px;" data-copy-creds data-username="{{ user.username }}" data-password="{{ user.password }}">
+                                <div class="fw-semibold">{{ user.label }}</div>
+                                <div class="small text-muted">Usuario · {{ user.username }}</div>
+                                <div class="small text-muted">Contraseña · {{ user.password }}</div>
+                                <span class="copy-feedback small text-success d-none">Copiado</span>
+                            </button>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="col-12 col-lg-4">
+                    <h3 class="h6 text-uppercase text-muted mb-2">Cierre</h3>
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for user in user_management_cierre %}
+                            <button type="button" class="btn btn-outline-secondary text-start px-3 py-2 user-card" style="min-width: 180px;" data-copy-creds data-username="{{ user.username }}" data-password="{{ user.password }}">
+                                <div class="fw-semibold">{{ user.label }}</div>
+                                <div class="small text-muted">Usuario · {{ user.username }}</div>
+                                <div class="small text-muted">Contraseña · {{ user.password }}</div>
+                                <span class="copy-feedback small text-success d-none">Copiado</span>
+                            </button>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            <div class="row g-3 mt-3">
+                <div class="col-12">
+                    <h3 class="h6 text-uppercase text-muted mb-2">Movimientos</h3>
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for user in user_management_movimientos %}
+                            <button type="button" class="btn btn-outline-secondary text-start px-3 py-2 user-card" style="min-width: 180px;" data-copy-creds data-username="{{ user.username }}" data-password="{{ user.password }}">
+                                <div class="fw-semibold">{{ user.label }}</div>
+                                <div class="small text-muted">Usuario · {{ user.username }}</div>
+                                <div class="small text-muted">Contraseña · {{ user.password }}</div>
+                                <span class="copy-feedback small text-success d-none">Copiado</span>
+                            </button>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <form method="post" class="card shadow-sm mt-3">
+        <input type="hidden" name="form_action" value="update_users">
+        <div class="card-body">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-start mb-3">
+                <div>
+                    <h2 class="h5 mb-1">Editar credenciales</h2>
+                    <p class="small text-muted mb-0">Actualiza los nombres de usuario y contraseñas visibles en el panel de administración.</p>
+                </div>
+            </div>
+            <div class="row g-3">
+                <div class="col-12 col-lg-4">
+                    <h3 class="h6 text-uppercase text-muted mb-2">Cocina</h3>
+                    <div class="row g-2">
+                        {% for user in user_management_cocina %}
+                            <div class="col-12">
+                                <label class="form-label small mb-1">{{ user.label }}</label>
+                                <input type="hidden" name="cocina_label_{{ loop.index0 }}" value="{{ user.label }}">
+                                <div class="row g-2 mb-2">
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label small mb-1">Sede</label>
+                                        <select name="cocina_sede_{{ loop.index0 }}" class="form-select form-select-sm" required>
+                                            {% for sede in sedes %}
+                                                <option value="{{ sede.ID_Sede }}" {% if sede.ID_Sede == user.id_sede %}selected{% endif %}>{{ sede.Nombre_Sede }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label small mb-1">Turno</label>
+                                        <select name="cocina_turno_{{ loop.index0 }}" class="form-select form-select-sm" required>
+                                            {% for turno in turnos %}
+                                                <option value="{{ turno.ID_Turno }}" {% if turno.ID_Turno == user.id_turno %}selected{% endif %}>{{ turno.Nombre_Turno }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label small mb-1">Área</label>
+                                        <select name="cocina_area_{{ loop.index0 }}" class="form-select form-select-sm" required>
+                                            {% for area in areas %}
+                                                <option value="{{ area.ID_Area }}" {% if area.ID_Area == user.id_area %}selected{% endif %}>{{ area.Nombre_Area }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="row g-2">
+                                    <div class="col-12 col-md-6">
+                                        <input type="text" name="cocina_username_{{ loop.index0 }}" class="form-control form-control-sm" value="{{ user.username }}" placeholder="Usuario" required>
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <input type="text" name="cocina_password_{{ loop.index0 }}" class="form-control form-control-sm" value="{{ user.password }}" placeholder="Contraseña" required>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="col-12 col-lg-4">
+                    <h3 class="h6 text-uppercase text-muted mb-2">Caja</h3>
+                    <div class="row g-2">
+                        {% for user in user_management_caja %}
+                            <div class="col-12">
+                                <label class="form-label small mb-1">{{ user.label }}</label>
+                                <input type="hidden" name="caja_label_{{ loop.index0 }}" value="{{ user.label }}">
+                                <div class="row g-2 mb-2">
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label small mb-1">Sede</label>
+                                        <select name="caja_sede_{{ loop.index0 }}" class="form-select form-select-sm" required>
+                                            {% for sede in sedes %}
+                                                <option value="{{ sede.ID_Sede }}" {% if sede.ID_Sede == user.id_sede %}selected{% endif %}>{{ sede.Nombre_Sede }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label small mb-1">Turno</label>
+                                        <select name="caja_turno_{{ loop.index0 }}" class="form-select form-select-sm" required>
+                                            {% for turno in turnos %}
+                                                <option value="{{ turno.ID_Turno }}" {% if turno.ID_Turno == user.id_turno %}selected{% endif %}>{{ turno.Nombre_Turno }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label small mb-1">Área</label>
+                                        <select name="caja_area_{{ loop.index0 }}" class="form-select form-select-sm" required>
+                                            {% for area in areas %}
+                                                <option value="{{ area.ID_Area }}" {% if area.ID_Area == user.id_area %}selected{% endif %}>{{ area.Nombre_Area }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="row g-2">
+                                    <div class="col-12 col-md-6">
+                                        <input type="text" name="caja_username_{{ loop.index0 }}" class="form-control form-control-sm" value="{{ user.username }}" placeholder="Usuario" required>
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <input type="text" name="caja_password_{{ loop.index0 }}" class="form-control form-control-sm" value="{{ user.password }}" placeholder="Contraseña" required>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="col-12 col-lg-4">
+                    <h3 class="h6 text-uppercase text-muted mb-2">Cierre</h3>
+                    <div class="row g-2">
+                        {% for user in user_management_cierre %}
+                            <div class="col-12">
+                                <label class="form-label small mb-1">{{ user.label }}</label>
+                                <input type="hidden" name="cierre_label_{{ loop.index0 }}" value="{{ user.label }}">
+                                <div class="row g-2 mb-2">
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label small mb-1">Sede</label>
+                                        <select name="cierre_sede_{{ loop.index0 }}" class="form-select form-select-sm" required>
+                                            {% for sede in sedes %}
+                                                <option value="{{ sede.ID_Sede }}" {% if sede.ID_Sede == user.id_sede %}selected{% endif %}>{{ sede.Nombre_Sede }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label small mb-1">Turno</label>
+                                        <select name="cierre_turno_{{ loop.index0 }}" class="form-select form-select-sm" required>
+                                            {% for turno in turnos %}
+                                                <option value="{{ turno.ID_Turno }}" {% if turno.ID_Turno == user.id_turno %}selected{% endif %}>{{ turno.Nombre_Turno }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label small mb-1">Área</label>
+                                        <select name="cierre_area_{{ loop.index0 }}" class="form-select form-select-sm" required>
+                                            {% for area in areas %}
+                                                <option value="{{ area.ID_Area }}" {% if area.ID_Area == user.id_area %}selected{% endif %}>{{ area.Nombre_Area }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="row g-2">
+                                    <div class="col-12 col-md-6">
+                                        <input type="text" name="cierre_username_{{ loop.index0 }}" class="form-control form-control-sm" value="{{ user.username }}" placeholder="Usuario" required>
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <input type="text" name="cierre_password_{{ loop.index0 }}" class="form-control form-control-sm" value="{{ user.password }}" placeholder="Contraseña" required>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            <div class="row g-3 mt-3">
+                <div class="col-12">
+                    <h3 class="h6 text-uppercase text-muted mb-2">Movimientos</h3>
+                    <div class="row g-2">
+                        {% for user in user_management_movimientos %}
+                            <div class="col-12">
+                                <label class="form-label small mb-1">{{ user.label }}</label>
+                                <input type="hidden" name="movimientos_label_{{ loop.index0 }}" value="{{ user.label }}">
+                                <div class="row g-2 mb-2">
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label small mb-1">Sede</label>
+                                        <select name="movimientos_sede_{{ loop.index0 }}" class="form-select form-select-sm" required>
+                                            {% for sede in sedes %}
+                                                <option value="{{ sede.ID_Sede }}" {% if sede.ID_Sede == user.id_sede %}selected{% endif %}>{{ sede.Nombre_Sede }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label small mb-1">Turno</label>
+                                        <select name="movimientos_turno_{{ loop.index0 }}" class="form-select form-select-sm" required>
+                                            {% for turno in turnos %}
+                                                <option value="{{ turno.ID_Turno }}" {% if turno.ID_Turno == user.id_turno %}selected{% endif %}>{{ turno.Nombre_Turno }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label small mb-1">Área</label>
+                                        <select name="movimientos_area_{{ loop.index0 }}" class="form-select form-select-sm" required>
+                                            {% for area in areas %}
+                                                <option value="{{ area.ID_Area }}" {% if area.ID_Area == user.id_area %}selected{% endif %}>{{ area.Nombre_Area }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="row g-2">
+                                    <div class="col-12 col-md-6">
+                                        <input type="text" name="movimientos_username_{{ loop.index0 }}" class="form-control form-control-sm" value="{{ user.username }}" placeholder="Usuario" required>
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <input type="text" name="movimientos_password_{{ loop.index0 }}" class="form-control form-control-sm" value="{{ user.password }}" placeholder="Contraseña" required>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            <div class="mt-3 text-end">
+                <button type="submit" class="btn btn-success">Guardar usuarios</button>
+            </div>
+        </div>
+    </form>
+</div>
+<script>
+    (function () {
+        const buttons = document.querySelectorAll('[data-copy-creds]');
+        buttons.forEach((button) => {
+            const feedback = button.querySelector('.copy-feedback');
+            let feedbackTimer;
+            button.addEventListener('click', () => {
+                const username = button.dataset.username;
+                const password = button.dataset.password;
+                const payload = `${username}:${password}`;
+                function copyText() {
+                    const temp = document.createElement('textarea');
+                    temp.value = payload;
+                    temp.setAttribute('readonly', '');
+                    temp.style.position = 'absolute';
+                    temp.style.left = '-9999px';
+                    document.body.appendChild(temp);
+                    temp.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(temp);
+                }
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(payload).catch(copyText);
+                } else {
+                    copyText();
+                }
+                if (feedback) {
+                    feedback.classList.remove('d-none');
+                    clearTimeout(feedbackTimer);
+                    feedbackTimer = setTimeout(() => {
+                        feedback.classList.add('d-none');
+                    }, 1200);
+                }
+            });
+        });
+    })();
+</script>
+</body>
+</html>

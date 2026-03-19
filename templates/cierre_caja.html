@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Cierre de caja | {{ restaurant_name }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+</head>
+<body class="bg-light">
+<div class="container py-4">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start gap-3 mb-4">
+        <div>
+            <p class="text-muted small mb-1">{{ restaurant_name }} · Cierre diario</p>
+            <h1 class="h4 mb-1">Cuadrar caja</h1>
+            <div class="small text-muted">Selecciona la sede, el turno y la fecha para registrar cada cierre.</div>
+            {% if is_admin %}
+            <div class="d-inline-flex gap-1 mt-2">
+                <a href="{{ url_for('checklist') }}" class="btn btn-outline-primary btn-sm">Checklist</a>
+                <a href="{{ url_for('almacen') }}" class="btn btn-outline-secondary btn-sm">Panel de inventario</a>
+            </div>
+            {% endif %}
+        </div>
+        <a href="{{ url_for('login') }}" class="btn btn-outline-secondary">Volver al inicio</a>
+    </div>
+
+    <form method="get" action="{{ url_for('cierre_caja') }}" class="row g-3 align-items-end rounded-4 bg-white p-3 shadow-sm mb-4">
+        <div class="col-sm-6 col-md-4">
+            <label class="form-label text-muted">Sede</label>
+            <select name="id_sede" class="form-select" {% if not is_admin %}disabled{% endif %}>
+                {% for sede in sedes %}
+                    <option value="{{ sede.ID_Sede }}" {% if sede.ID_Sede == selected_sede %}selected{% endif %}>{{ sede.Nombre_Sede }}</option>
+                {% endfor %}
+            </select>
+            {% if not is_admin %}
+            <input type="hidden" name="id_sede" value="{{ selected_sede }}">
+            {% endif %}
+        </div>
+        <div class="col-sm-6 col-md-4">
+            <label class="form-label text-muted">Turno</label>
+            <select name="id_turno" class="form-select" {% if not is_admin %}disabled{% endif %}>
+                {% for turno in turnos %}
+                    <option value="{{ turno.ID_Turno }}" {% if turno.ID_Turno == selected_turno %}selected{% endif %}>{{ turno.Nombre_Turno }}</option>
+                {% endfor %}
+            </select>
+            {% if not is_admin %}
+            <input type="hidden" name="id_turno" value="{{ selected_turno }}">
+            {% endif %}
+        </div>
+        <div class="col-sm-6 col-md-3">
+            <label class="form-label text-muted">Fecha</label>
+            <input name="fecha" class="form-control" type="date" value="{{ selected_date_input }}">
+        </div>
+        <div class="col-sm-6 col-md-1 d-grid">
+            <button type="submit" class="btn btn-primary">Cargar</button>
+        </div>
+        {% if not is_admin %}
+        <div class="col-12">
+            <p class="small text-muted mb-0">Solo el administrador puede cambiar la sede o el turno desde esta pantalla.</p>
+        </div>
+        {% endif %}
+    </form>
+
+    {% if is_admin %}
+    <ul class="nav nav-tabs mb-3" id="cierreTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="cierre-tab-checklist" data-bs-toggle="tab" data-bs-target="#tab-checklist" type="button" role="tab" aria-controls="tab-checklist" aria-selected="true">Checklist</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="cierre-tab-dashboard" data-bs-toggle="tab" data-bs-target="#tab-dashboard" type="button" role="tab" aria-controls="tab-dashboard" aria-selected="false">Dashboard</button>
+        </li>
+    </ul>
+    {% endif %}
+    <div class="tab-content">
+        <div class="tab-pane fade show active" id="tab-checklist" role="tabpanel" aria-labelledby="cierre-tab-checklist">
+            <div id="toastContainer" aria-live="polite" aria-atomic="true"></div>
+            <div class="row g-4">
+                <div class="col-lg-7">
+                    <div class="card shadow-sm">
+                        <div class="card-body">
+                            <div class="d-flex flex-column flex-sm-row justify-content-between gap-2">
+                                <div>
+                                    <h2 class="h5 mb-0">Detalle del cierre</h2>
+                                    <p class="small text-muted mb-1">
+                                        {{ selected_date_label }} · {{ selected_sede_label }} · {{ selected_turno_label }}
+                                    </p>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-info text-dark">Edita y guarda cuando termines</span>
+                                </div>
+                            </div>
+                            <form id="cierreForm" class="mt-3" autocomplete="off">
+                                <input type="hidden" id="cierreIdSede" value="{{ selected_sede or '' }}">
+                                <input type="hidden" id="cierreIdTurno" value="{{ selected_turno or '' }}">
+                                <input type="hidden" id="cierreFecha" value="{{ selected_date_input }}">
+                                <div class="row g-3">
+                                    <div class="col-12">
+                                        <label class="form-label">Monto inicial</label>
+                                        <input id="cierreMontoInicial" type="number" min="0" step="0.01" class="form-control" value="{{ closing_data.monto_inicial }}">
+                                    </div>
+                                </div>
+                                <div class="mt-4">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <h3 class="h6 mb-0">Gastos</h3>
+                                        <button type="button" id="cierreAddGasto" class="btn btn-sm btn-outline-primary">Agregar gasto</button>
+                                    </div>
+                                    <div id="cierreGastos" class="d-flex flex-column gap-2"></div>
+                                    <template id="cierreGastoTemplate">
+                                        <div class="input-group cierre-gasto-row">
+                                            <input type="text" class="form-control form-control-sm" placeholder="Descripción" data-field="descripcion">
+                                            <input type="number" class="form-control form-control-sm text-end" min="0" step="0.01" placeholder="Monto" data-field="monto">
+                                            <button type="button" class="btn btn-sm btn-outline-danger" data-action="remove-gasto">Quitar</button>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="row g-3 mt-4">
+                                    <div class="col-6 col-sm-3">
+                                        <label class="form-label d-flex align-items-center gap-2">
+                                            <span class="payment-dot payment-pos"></span>POS
+                                        </label>
+                                        <input id="cierrePos" type="number" min="0" step="0.01" class="form-control" value="{{ closing_data.pos }}">
+                                    </div>
+                                    <div class="col-6 col-sm-3">
+                                        <label class="form-label d-flex align-items-center gap-2">
+                                            <span class="payment-dot payment-yape"></span>Yape
+                                        </label>
+                                        <input id="cierreYape" type="number" min="0" step="0.01" class="form-control" value="{{ closing_data.yape }}">
+                                    </div>
+                                    <div class="col-6 col-sm-3">
+                                        <label class="form-label d-flex align-items-center gap-2">
+                                            <span class="payment-dot payment-plin"></span>Plin
+                                        </label>
+                                        <input id="cierrePlin" type="number" min="0" step="0.01" class="form-control" value="{{ closing_data.plin }}">
+                                    </div>
+                                    <div class="col-6 col-sm-3">
+                                        <label class="form-label d-flex align-items-center gap-2">
+                                            <span class="payment-dot payment-efectivo"></span>Efectivo
+                                        </label>
+                                        <input id="cierreEfectivo" type="number" min="0" step="0.01" class="form-control" value="{{ closing_data.efectivo }}">
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <label class="form-label">Observaciones</label>
+                                    <textarea id="cierreObservaciones" rows="3" class="form-control" placeholder="Notas breves">{{ closing_data.observaciones }}</textarea>
+                                </div>
+                                <div class="row g-3 mt-3">
+                                    <div class="col-12">
+                                        <label class="form-label">Venta del sistema</label>
+                                        <input id="cierreVentaSistema" type="number" min="0" step="0.01" class="form-control" value="{{ closing_data.venta_sistema }}">
+                                    </div>
+                                </div>
+                                <div class="mt-4">
+                                    <button type="submit" class="btn btn-primary btn-lg w-100">Guardar cierre</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-5">
+                    <div class="card resumen-card shadow-sm">
+                        <div class="card-body">
+                            <h3 class="h6 text-uppercase text-muted mb-3">Resumen operativo</h3>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>Total ingresos</span>
+                                <strong id="cierreTotalIngresos">0.00</strong>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>Gastos</span>
+                                <strong id="cierreTotalGastos">0.00</strong>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>Subtotal (ingresos + gastos)</span>
+                                <strong id="cierreSubtotal">0.00</strong>
+                            </div>
+                            <div class="d-flex justify-content-between mb-3">
+                                <span>Total (subtotal - inicial)</span>
+                                <strong id="cierreTotalActual">0.00</strong>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <p class="small text-muted mb-0">Diferencia vs venta del sistema</p>
+                                </div>
+                                <strong id="cierreDiferencia" class="fs-5">0.00</strong>
+                            </div>
+                            <p id="cierreDiferenciaHint" class="small mt-2 mb-0 text-muted">Verifica los tickets y depósitos para cuadrar.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% if dashboard_data %}
+        <div class="tab-pane fade" id="tab-dashboard" role="tabpanel" aria-labelledby="cierre-tab-dashboard">
+            <div class="mb-3">
+                <p class="small text-muted mb-1">Fecha: {{ dashboard_data.filters.selected_date }} · Sede: {{ dashboard_data.filters.selected_sede_label }} · Turno: {{ dashboard_data.filters.selected_turno_label }}</p>
+            </div>
+            <div class="row g-3 mb-3">
+                <div class="col-12 col-md-3">
+                    <div class="card border-0 rounded-4 shadow-sm p-3">
+                        <p class="text-muted small mb-1">Total ingresos del día</p>
+                        <div class="h4 mb-0">{{ '%.2f' % dashboard_data.kpis.total_ingresos }}</div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-3">
+                    <div class="card border-0 rounded-4 shadow-sm p-3">
+                        <p class="text-muted small mb-1">Total gastos</p>
+                        <div class="h4 mb-0">{{ '%.2f' % dashboard_data.kpis.total_gastos }}</div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-3">
+                    <div class="card border-0 rounded-4 shadow-sm p-3">
+                        <p class="text-muted small mb-1">Utilidad neta</p>
+                        <div class="h4 mb-0">{{ '%.2f' % dashboard_data.kpis.utilidad_neta }}</div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-3">
+                    <div class="card border-0 rounded-4 shadow-sm p-3">
+                        <p class="text-muted small mb-1">Diferencia vs sistema</p>
+                        <div class="h4 mb-0">{{ '%.2f' % dashboard_data.kpis.diferencia_vs_sistema }}</div>
+                    </div>
+                </div>
+            </div>
+                    <div class="card shadow-sm mb-3">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h3 class="h6 mb-0">Comparación por sede y turno</h3>
+                                <span class="badge bg-secondary">Ingresos</span>
+                            </div>
+                            <div class="dashboard-chart-wrapper">
+                                <canvas id="dashboardBarSedeTurno" height="160"></canvas>
+                            </div>
+                        </div>
+                    </div>
+            <div class="card shadow-sm mb-3">
+                <div class="card-body">
+                    <h3 class="h6 mb-3">Resumen por sede y turno</h3>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Sede</th>
+                                    <th>Turno</th>
+                                    <th class="text-end">Ingresos</th>
+                                    <th class="text-end">Gastos</th>
+                                    <th class="text-end">Ventas netas</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in dashboard_data.table_rows %}
+                                <tr>
+                                    <td>{{ row.sede }}</td>
+                                    <td>{{ row.turno }}</td>
+                                    <td class="text-end">{{ '%.2f' % row.ingresos }}</td>
+                                    <td class="text-end">{{ '%.2f' % row.gastos }}</td>
+                                    <td class="text-end">{{ '%.2f' % row.ventas_netas }}</td>
+                                </tr>
+                                {% endfor %}
+                                <tr class="fw-semibold border-top">
+                                    <td colspan="2">TOTAL</td>
+                                    <td class="text-end">{{ '%.2f' % dashboard_data.table_total.ingresos }}</td>
+                                    <td class="text-end">{{ '%.2f' % dashboard_data.table_total.gastos }}</td>
+                                    <td class="text-end">{{ '%.2f' % dashboard_data.table_total.ventas_netas }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-body">
+                            <h3 class="h6 mb-3">Medios de pago</h3>
+                            <div class="dashboard-chart-wrapper">
+                                <canvas id="dashboardPiePayments" height="200"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-body">
+                            <h3 class="h6 mb-3">Distribución por sede y turno</h3>
+                            <div class="dashboard-chart-wrapper">
+                                <canvas id="dashboardPieDistribution" height="200"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row g-3 mb-3">
+                <div class="col-lg-8">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-body">
+                            <h3 class="h6 mb-3">Ingresos vs gastos</h3>
+                            <div class="dashboard-chart-wrapper">
+                                <canvas id="dashboardBarIngresosGastos" height="160"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-4">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-body">
+                            <h3 class="h6 mb-3">Resumen operativo</h3>
+                            <div class="list-group list-group-flush">
+                                <div class="list-group-item d-flex justify-content-between align-items-center">POS <span class="fw-semibold">{{ '%.2f' % dashboard_data.panel.pos }}</span></div>
+                                <div class="list-group-item d-flex justify-content-between align-items-center">Yape <span class="fw-semibold">{{ '%.2f' % dashboard_data.panel.yape }}</span></div>
+                                <div class="list-group-item d-flex justify-content-between align-items-center">Plin <span class="fw-semibold">{{ '%.2f' % dashboard_data.panel.plin }}</span></div>
+                                <div class="list-group-item d-flex justify-content-between align-items-center">Efectivo <span class="fw-semibold">{{ '%.2f' % dashboard_data.panel.efectivo }}</span></div>
+                                <div class="list-group-item d-flex justify-content-between align-items-center border-top">Total general <span class="fw-semibold">{{ '%.2f' % dashboard_data.panel.total }}</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card shadow-sm mb-3">
+                <div class="card-body">
+                    <h3 class="h6 mb-3">Evolución de ingresos y gastos</h3>
+                    <div class="dashboard-chart-wrapper">
+                        <canvas id="dashboardLineTrend" height="140"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+<script>
+    window.cierreContext = {
+        closingData: {{ closing_data | tojson }},
+        selectedSede: {{ selected_sede or 0 }},
+        selectedTurno: "{{ selected_turno }}",
+    };
+</script>
+{% if dashboard_data %}
+<script>
+    window.dashboardContext = {{ dashboard_data | tojson }};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/cierre_dashboard.js') }}"></script>
+{% else %}
+<script>
+    window.dashboardContext = null;
+</script>
+{% endif %}
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+<script src="{{ url_for('static', filename='js/cierre.js') }}"></script>
+</body>
+</html>

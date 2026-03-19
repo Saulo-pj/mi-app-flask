@@ -1,0 +1,191 @@
+.check-item {
+    border: 1px solid #dee2e6;
+    border-radius: 0.75rem;
+    background: white;
+    padding: 0.75rem;
+}
+
+.check-item .producto {
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+
+.check-item .stock {
+    font-size: 0.9rem;
+    color: #6c757d;
+}
+
+.check-item-listo {
+    border-color: #f7c948;
+    box-shadow: inset 0 0 0 1px rgba(247, 201, 72, 0.35);
+}
+
+.check-item-recibido {
+    border-color: #0dcaf0;
+    box-shadow: inset 0 0 0 1px rgba(13, 202, 240, 0.35);
+}
+.check-item-recibido::after {
+    content: 'Recibido';
+    position: absolute;
+    top: 0.5rem;
+    right: 0.75rem;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    padding: 0.2rem 0.45rem;
+    border-radius: 999px;
+    background: rgba(13, 202, 240, 0.95);
+    color: #fff;
+}
+
+.check-item-locked {
+    position: relative;
+    opacity: 0.65;
+}
+
+.check-item-locked::after {
+    content: 'Enviado';
+    position: absolute;
+    top: 0.5rem;
+    right: 0.75rem;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    padding: 0.2rem 0.45rem;
+    border-radius: 999px;
+    background: rgba(25, 135, 84, 0.9);
+    color: #fff;
+}
+
+.input-cantidad {
+    font-size: 1.2rem;
+    height: 52px;
+}
+
+.input-cantidad.staged {
+    animation: stagedPulse 0.6s ease;
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+}
+
+@keyframes stagedPulse {
+    0% { background-color: #e7f1ff; }
+    100% { background-color: white; }
+}
+
+.btn-solicitar {
+    height: 52px;
+    font-weight: 600;
+}
+
+/* Animación para el bloque de categoría/unidad */
+#newCatUnitBox {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: max-height 240ms ease, opacity 180ms ease;
+}
+#newCatUnitBox.visible {
+    max-height: 420px; /* suficiente para contener los controles */
+    opacity: 1;
+}
+
+/* Posición del toast container */
+#toastContainer {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2000;
+    width: min(420px, 90vw);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    pointer-events: none;
+}
+
+#toastContainer .toast {
+    width: 100%;
+    pointer-events: auto;
+}
+
+.toast-action button {
+    font-weight: 600;
+}
+
+.pedido-card {
+    border: 1px solid #dee2e6;
+    border-radius: 0.75rem;
+    padding: 1rem;
+    background: #fff;
+}
+
+.resumen-card {
+    border-left: 4px solid #0d6efd;
+    background: linear-gradient(180deg, rgba(13,110,253,0.05), rgba(13,110,253,0.02));
+}
+
+.resumen-card strong {
+    font-size: 1.1rem;
+}
+
+.payment-dot {
+    display: inline-flex;
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 999px;
+    border: 2px solid transparent;
+}
+
+.payment-dot.payment-pos {
+    background: #fd7e14;
+}
+
+.payment-dot.payment-yape {
+    background: #6610f2;
+}
+
+.payment-dot.payment-plin {
+    background: #0dcaf0;
+}
+
+.payment-dot.payment-efectivo {
+    background: #198754;
+}
+
+.cierre-gasto-row {
+    border: 1px solid #d3d7df;
+    border-radius: 0.5rem;
+    padding: 0.35rem;
+    background: #f8fafc;
+}
+
+.cierre-gasto-row input {
+    border: none;
+    background: transparent;
+}
+
+.cierre-gasto-row button {
+    border: none;
+}
+
+.pedido-row-locked {
+    opacity: 0.65;
+}
+
+.pedido-row-locked .input-entrega {
+    background-color: #f8f9fa;
+    cursor: not-allowed;
+}
+
+.dashboard-chart-wrapper {
+    position: relative;
+    max-height: 320px;
+    min-height: 220px;
+    overflow: hidden;
+}
+
+.dashboard-chart-wrapper canvas {
+    width: 100% !important;
+    height: 240px !important;
+    max-height: 320px;
+}

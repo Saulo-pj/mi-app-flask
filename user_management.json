@@ -1,0 +1,104 @@
+{
+  "cocina": [
+    {
+      "label": "Sede 17 · Día (Cocina)",
+      "username": "luis",
+      "password": "2929",
+      "id_sede": 17,
+      "id_turno": "DIA",
+      "id_area": "COC"
+    },
+    {
+      "label": "Sede 17 · Noche (Cocina)",
+      "username": "sede17nococina",
+      "password": "2929",
+      "id_sede": 17,
+      "id_turno": "NOC",
+      "id_area": "COC"
+    },
+    {
+      "label": "Sede 20 · Día (Cocina)",
+      "username": "sede20diacocina",
+      "password": "2929",
+      "id_sede": 20,
+      "id_turno": "DIA",
+      "id_area": "COC"
+    },
+    {
+      "label": "Sede 20 · Noche (Cocina)",
+      "username": "sede20nococina",
+      "password": "2929",
+      "id_sede": 20,
+      "id_turno": "NOC",
+      "id_area": "COC"
+    }
+  ],
+  "caja": [
+    {
+      "label": "Sede 17 · Día (Caja)",
+      "username": "caja17dia",
+      "password": "2929",
+      "id_sede": 17,
+      "id_turno": "DIA",
+      "id_area": "SAL"
+    },
+    {
+      "label": "Sede 17 · Noche (Caja)",
+      "username": "caja17noche",
+      "password": "2929",
+      "id_sede": 17,
+      "id_turno": "NOC",
+      "id_area": "SAL"
+    },
+    {
+      "label": "Sede 20 · Día (Caja)",
+      "username": "caja20dia",
+      "password": "2929",
+      "id_sede": 20,
+      "id_turno": "DIA",
+      "id_area": "SAL"
+    },
+    {
+      "label": "Sede 20 · Noche (Caja)",
+      "username": "caja20noche",
+      "password": "2929",
+      "id_sede": 20,
+      "id_turno": "NOC",
+      "id_area": "SAL"
+    }
+  ],
+  "cierre": [
+    {
+      "label": "Sede 17 · Día (Cierre 1)",
+      "username": "cierre17dia1",
+      "password": "2929",
+      "id_sede": 17,
+      "id_turno": "DIA",
+      "id_area": "SAL"
+    },
+    {
+      "label": "Sede 17 · Día (Cierre 2)",
+      "username": "cierre17dia2",
+      "password": "2929",
+      "id_sede": 17,
+      "id_turno": "DIA",
+      "id_area": "SAL"
+    },
+    {
+      "label": "Sede 17 · Día (Cierre 3)",
+      "username": "cierre17dia3",
+      "password": "2929",
+      "id_sede": 17,
+      "id_turno": "DIA",
+      "id_area": "SAL"
+    },
+    {
+      "label": "Sede 17 · Día (Cierre 4)",
+      "username": "cierre17dia4",
+      "password": "2929",
+      "id_sede": 17,
+      "id_turno": "DIA",
+      "id_area": "SAL"
+    }
+  ]
+}

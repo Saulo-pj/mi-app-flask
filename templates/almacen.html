@@ -1,0 +1,1184 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Panel de Almacén</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+</head>
+<body data-page="almacen" data-default-date="{{ selected_date_input }}" class="bg-light">
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h1 class="h4 m-0">Panel de Despacho y Gestión</h1>
+            {% if is_admin %}
+            <div class="d-inline-flex gap-1 mt-1">
+                <a href="{{ url_for('checklist') }}" class="btn btn-outline-primary btn-sm">Checklist</a>
+                <a href="{{ url_for('cierre_caja', id_sede=current_sede or '', id_turno=current_turno or '') }}" class="btn btn-outline-secondary btn-sm">Cierre de caja</a>
+            </div>
+            {% endif %}
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('almacen_ajustes') }}" class="btn btn-outline-primary btn-sm">Ajustes</a>
+            <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary btn-sm">Salir</a>
+        </div>
+    </div>
+    <div class="card shadow-sm mb-3 d-none" id="arrivalAlerts">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="fw-semibold">Alertas de llegada</div>
+                    <div class="small text-muted">Pedidos enviados que la cocina aún no confirmó recibir.</div>
+                </div>
+                <button type="button" id="btnRefreshAlertas" class="btn btn-sm btn-outline-primary">Actualizar</button>
+            </div>
+            <ul id="arrivalAlertList" class="list-unstyled mt-3 mb-0"></ul>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body">
+            <div class="d-flex flex-column flex-lg-row align-items-lg-end gap-3">
+                <div class="flex-grow-1">
+                    <div class="small text-muted">Fecha seleccionada</div>
+                    <div class="fw-semibold" id="almacenFechaResumen">{{ selected_date_label }}</div>
+                </div>
+                <div class="d-flex flex-column flex-sm-row gap-2 align-items-sm-end">
+                    <div>
+                        <label for="almacenFechaFiltro" class="form-label small mb-1">Cambiar fecha</label>
+                        <input type="date" id="almacenFechaFiltro" class="form-control" value="{{ selected_date_input }}">
+                    </div>
+                    <div class="d-grid">
+                        <button type="button" id="btnAlmacenFiltrar" class="btn btn-outline-primary">Ver lista</button>
+                    </div>
+                </div>
+            </div>
+            <div class="small text-muted mt-2">Pedidos ordenados por sede y turno.</div>
+        </div>
+    </div>
+
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <ul class="nav nav-tabs justify-content-center" id="almacenTab" role="tablist">
+                        {% if not movimientos_only %}
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="tab-pedidos" data-bs-toggle="tab" data-bs-target="#tabPedidos" type="button" role="tab" aria-controls="tabPedidos" aria-selected="true">Pedidos</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="tab-inventario" data-bs-toggle="tab" data-bs-target="#tabInventario" type="button" role="tab" aria-controls="tabInventario" aria-selected="false">Inventario</button>
+                            </li>
+                        {% endif %}
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link {% if movimientos_only %}active{% endif %}" id="tab-movimientos" data-bs-toggle="tab" data-bs-target="#tabMovimientos" type="button" role="tab" aria-controls="tabMovimientos" aria-selected="{{ 'true' if movimientos_only else 'false' }}">Movimientos</button>
+                        </li>
+                    </ul>
+                </div>
+        <div class="tab-content px-3 pb-3">
+            {% if not movimientos_only %}
+            <div class="tab-pane fade show active" id="tabPedidos" role="tabpanel" aria-labelledby="tab-pedidos">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+                            <h2 class="h6 m-0">Pedidos de Sedes</h2>
+                            <div class="d-flex gap-2">
+                                <button type="button" id="btnVerProcesados" class="btn btn-outline-secondary btn-sm">Ver enviados</button>
+                            </div>
+                        </div>
+                        <div id="almacenPedidosWrapper" class="vstack gap-3"></div>
+                        <div class="small text-muted mt-2">Procesa cada sede y turno por separado.</div>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-pane fade" id="tabInventario" role="tabpanel" aria-labelledby="tab-inventario">
+                <div class="row gy-3">
+                    <div class="col-12">
+                        <div class="card shadow-sm">
+                            <div class="card-body">
+                                <h2 class="h6">Inventario</h2>
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-12 col-md-5">
+                                        <label class="form-label small" for="inventarioSearch">Buscar productos</label>
+                                        <input id="inventarioSearch" type="search" class="form-control" placeholder="ID, nombre, categoría o subárea">
+                                    </div>
+                                    <div class="col-12 col-md-2">
+                                        <label class="form-label small" for="filterCategoria">Categoría</label>
+                                        <select id="filterCategoria" class="form-select form-select-sm">
+                                            <option value="">Todas</option>
+                                            {% for c in categorias %}
+                                                <option value="{{ c.Nombre_Categoria }}">{{ c.Nombre_Categoria }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-2">
+                                        <label class="form-label small" for="filterSubarea">Subárea</label>
+                                        <select id="filterSubarea" class="form-select form-select-sm">
+                                            <option value="">Todas</option>
+                                            {% for area_id, lista in subareas_config.items() %}
+                                                {% for item in lista %}
+                                                    <option value="{{ item.nombre }}">{{ item.nombre }}</option>
+                                                {% endfor %}
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-2">
+                                        <label class="form-label small" for="filterUnidad">Unidad</label>
+                                        <select id="filterUnidad" class="form-select form-select-sm">
+                                            <option value="">Todas</option>
+                                            {% for u in unidades %}
+                                                <option value="{{ u.Nombre_Unidad }}">{{ u.Nombre_Unidad }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-1 d-flex justify-content-end">
+                                        <button type="button" id="btnExportInventario" class="btn btn-outline-primary btn-sm">Exportar</button>
+                                    </div>
+                                </div>
+                                <div class="d-flex gap-2 mt-2">
+                                    <button type="button" id="btnImportInventario" class="btn btn-outline-secondary flex-fill btn-sm">Importar Excel</button>
+                                </div>
+                                <div class="table-responsive mt-3">
+                                    <table class="table table-sm table-hover align-middle mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>ID</th>
+                                                <th>Producto</th>
+                                                <th>Categoría</th>
+                                                <th>Subárea</th>
+                                                <th>Unidad</th>
+                                                <th>Punto mínimo</th>
+                                                <th>Stock central</th>
+                                                <th>Estado</th>
+                                                <th>Acciones</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="productosTableBody">
+                                            <tr>
+                                                <td colspan="9" class="text-muted text-center">Cargando productos...</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div id="inventoryImportFeedback" class="text-success small d-none mt-2"></div>
+                                <input type="file" id="inventarioFileInput" class="d-none" accept=".xls,.xlsx">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <div class="card shadow-sm h-100">
+                            <div class="card-body">
+                                <h2 class="h6">Nueva categoría</h2>
+                                <div class="input-group">
+                                    <input id="catNombre" class="form-control" placeholder="Ej: Congelados">
+                                    <button id="btnCrearCategoria" class="btn btn-outline-primary">Agregar</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <div class="card shadow-sm h-100">
+                            <div class="card-body">
+                                <h2 class="h6">Nueva Unidad</h2>
+                                <div class="input-group">
+                                    <input id="uniNombre" class="form-control" placeholder="Ej: litro">
+                                    <button id="btnCrearUnidad" class="btn btn-outline-primary">Agregar</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <div class="card shadow-sm">
+                            <div class="card-body">
+                                <h2 class="h6">Nuevo Producto</h2>
+                                <div class="row g-2">
+                                    <div class="col-12">
+                                        <input id="prodNombre" class="form-control" placeholder="Nombre producto">
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <select id="prodArea" class="form-select">
+                                            {% for a in areas %}
+                                                <option value="{{ a.ID_Area }}">{{ a.Nombre_Area }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <select id="prodSubarea" class="form-select"></select>
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <select id="prodCategoria" class="form-select">
+                                            {% for c in categorias %}
+                                                <option value="{{ c.ID_Categoria }}">{{ c.Nombre_Categoria }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <select id="prodUnidad" class="form-select">
+                                            {% for u in unidades %}
+                                                <option value="{{ u.ID_Unidad }}">{{ u.Nombre_Unidad }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <input id="prodStock" type="number" min="0" step="0.1" class="form-control" placeholder="Stock inicial (Sede Central)">
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <input id="prodPuntoMinimo" type="number" min="0" step="0.1" class="form-control" placeholder="Punto mínimo (alerta)">
+                                    </div>
+                                </div>
+                                <button id="btnCrearProducto" class="btn btn-outline-success w-100 mt-3">Crear producto</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            <div class="tab-pane fade{% if movimientos_only %} show active{% endif %}" id="tabMovimientos" role="tabpanel" aria-labelledby="tab-movimientos">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+                            <div>
+                                <h2 class="h6 mb-0">Movimientos</h2>
+                                <p class="small text-muted mb-0">Registra entradas y salidas sin perder el control del inventario.</p>
+                            </div>
+                            <div class="d-flex gap-2 align-items-center">
+                                <span class="badge bg-success">Entrada</span>
+                                <span class="badge bg-danger">Salida</span>
+                            </div>
+                        </div>
+                        <div class="row g-4">
+                            <div class="col-lg-6">
+                                <div class="card border-success h-100">
+                                    <div class="card-body">
+                                        <div class="d-flex justify-content-between align-items-center mb-3">
+                                            <h3 class="h6 mb-0">Entrada</h3>
+                                            <small class="text-success">Evita errores</small>
+                                        </div>
+                                        <form id="entradaForm">
+                                            <div class="mb-3 position-relative">
+                                                <label class="form-label">Producto</label>
+                                                <input id="entradaProductSearch" type="search" class="form-control" placeholder="Busca un producto" autocomplete="off" required>
+                                                <input type="hidden" id="entradaProductoId">
+                                                <ul id="entradaSuggestions" class="list-group position-absolute w-100 shadow border mt-1 d-none" style="z-index: 2000; max-height: 220px; overflow-y: auto;"></ul>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Unidad</label>
+                                                <input id="entradaUnidad" type="text" class="form-control" readonly>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Cantidad</label>
+                                                <input id="entradaCantidad" type="number" min="0.01" step="0.01" class="form-control" placeholder="0.00" required>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Motivo</label>
+                                                <input id="entradaMotivo" type="text" class="form-control" placeholder="Ej: Compra a proveedor, devolución, ajuste" required>
+                                            </div>
+                                            <div class="mt-3 border-top pt-3">
+                                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                                    <span class="small text-muted">Vista previa</span>
+                                                    <small class="text-muted">Revisa antes de registrar</small>
+                                                </div>
+                                                <div class="table-responsive">
+                                                    <table class="table table-sm mb-2">
+                                                        <tbody>
+                                                            <tr>
+                                                                <th class="text-nowrap" scope="row">Producto</th>
+                                                                <td id="entradaPreviewProducto">-</td>
+                                                            </tr>
+                                                            <tr>
+                                                                <th class="text-nowrap" scope="row">Unidad</th>
+                                                                <td id="entradaPreviewUnidad">-</td>
+                                                            </tr>
+                                                            <tr>
+                                                                <th class="text-nowrap" scope="row">Cantidad</th>
+                                                                <td id="entradaPreviewCantidad">-</td>
+                                                            </tr>
+                                                            <tr>
+                                                                <th class="text-nowrap" scope="row">Motivo</th>
+                                                                <td id="entradaPreviewMotivo">-</td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                                <div class="d-flex gap-2 mt-3">
+                                                    <button type="button" id="entradaAddItem" class="btn btn-outline-success flex-fill">Agregar a lista</button>
+                                                    <button type="button" id="entradaRegisterBtn" class="btn btn-success flex-fill" disabled>Registrar entradas</button>
+                                                </div>
+                                            </div>
+                                            <div class="mt-3 border rounded-2 bg-white p-3">
+                                                <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                                                    <span class="small text-muted">Productos en la lista</span>
+                                                    <small class="text-muted">Una vez registrado no se podrá quitar</small>
+                                                </div>
+                                                <div class="table-responsive">
+                                                    <table class="table table-sm mb-0">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Producto</th>
+                                                                <th>Unidad</th>
+                                                                <th>Cantidad</th>
+                                                                <th>Motivo</th>
+                                                                <th></th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody id="entradaQueueBody"></tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                            <p id="entradaMessage" class="form-text mt-2 mb-0" aria-live="polite"></p>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-6">
+                                <div class="card border-danger h-100">
+                                    <div class="card-body">
+                                        <div class="d-flex justify-content-between align-items-center mb-3">
+                                            <h3 class="h6 mb-0">Salida</h3>
+                                            <small class="text-danger">No sobrepasar stock</small>
+                                        </div>
+                                        <form id="salidaForm">
+                                            <div class="mb-3 position-relative">
+                                                <label class="form-label">Producto</label>
+                                                <input id="salidaProductSearch" type="search" class="form-control" placeholder="Busca un producto" autocomplete="off" required>
+                                                <input type="hidden" id="salidaProductoId">
+                                                <ul id="salidaSuggestions" class="list-group position-absolute w-100 shadow border mt-1 d-none" style="z-index: 2000; max-height: 220px; overflow-y: auto;"></ul>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Stock actual</label>
+                                                <div class="form-control-plaintext border rounded-2 bg-light py-2 d-flex justify-content-between align-items-center" id="salidaStock" aria-live="polite">
+                                                    <span id="salidaStockValue">0</span>
+                                                    <span id="salidaStockUnit"></span>
+                                                </div>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Cantidad</label>
+                                                <input id="salidaCantidad" type="number" min="0.01" step="0.01" class="form-control" placeholder="0.00" required>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Motivo</label>
+                                                <input id="salidaMotivo" type="text" class="form-control" placeholder="Ej: Uso cocina" required>
+                                            </div>
+                                            <div class="mt-3 border-top pt-3">
+                                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                                    <span class="small text-muted">Vista previa</span>
+                                                    <small class="text-muted">Revisa el stock y confirma</small>
+                                                </div>
+                                                <div class="table-responsive">
+                                                    <table class="table table-sm mb-2">
+                                                        <tbody>
+                                                            <tr>
+                                                                <th class="text-nowrap" scope="row">Producto</th>
+                                                                <td id="salidaPreviewProducto">-</td>
+                                                            </tr>
+                                                            <tr>
+                                                                <th class="text-nowrap" scope="row">Stock actual</th>
+                                                                <td id="salidaPreviewStock">-</td>
+                                                            </tr>
+                                                            <tr>
+                                                                <th class="text-nowrap" scope="row">Cantidad</th>
+                                                                <td id="salidaPreviewCantidad">-</td>
+                                                            </tr>
+                                                            <tr>
+                                                                <th class="text-nowrap" scope="row">Motivo</th>
+                                                                <td id="salidaPreviewMotivo">-</td>
+                                                            </tr>
+                                                            <tr>
+                                                                <th class="text-nowrap" scope="row">Stock posterior</th>
+                                                                <td id="salidaPreviewPostStock">-</td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                                <div class="d-flex gap-2 mt-3">
+                                                    <button type="button" id="salidaAddItem" class="btn btn-outline-danger flex-fill">Agregar a lista</button>
+                                                    <button type="button" id="salidaRegisterBtn" class="btn btn-danger flex-fill" disabled>Registrar salidas</button>
+                                                </div>
+                                            </div>
+                                            <div class="mt-3 border rounded-2 bg-white p-3">
+                                                <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                                                    <span class="small text-muted">Productos en la lista</span>
+                                                    <small class="text-muted">Una vez registrado no se podrá quitar</small>
+                                                </div>
+                                                <div class="table-responsive">
+                                                    <table class="table table-sm mb-0">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Producto</th>
+                                                                <th>Unidad</th>
+                                                                <th>Cantidad</th>
+                                                                <th>Motivo</th>
+                                                                <th>Stock posterior</th>
+                                                                <th></th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody id="salidaQueueBody"></tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                            <p id="salidaMessage" class="form-text mt-2 mb-0" aria-live="polite"></p>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    <div class="card shadow-sm mt-3">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h2 class="h6 mb-0">Movimientos registrados</h2>
+                                <div class="d-flex gap-2">
+                                    <button type="button" id="btnRefreshMovimientos" class="btn btn-outline-secondary btn-sm">Actualizar</button>
+                                    <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalMovimientosRegistrados">Ver movimientos</button>
+                                </div>
+                            </div>
+                            <div class="small text-muted mb-2">Los movimientos de entradas y salidas se guardan por fecha.</div>
+                            <div class="table-responsive">
+                                <table class="table table-sm align-middle mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Producto</th>
+                                            <th>Tipo</th>
+                                            <th>Cantidad</th>
+                                            <th>Unidad</th>
+                                            <th>Motivo</th>
+                                            <th>Usuario</th>
+                                            <th>Fecha / hora</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="movimientosBody">
+                                        <tr><td colspan="7" class="text-muted text-center">No hay movimientos registrados para esta fecha.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- Modal edición producto -->
+<div class="modal fade" id="modalEditProducto" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Editar Producto</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="modalProdId">
+                <div class="mb-2"><input id="modalNombre" class="form-control" placeholder="Nombre"></div>
+                <div class="mb-2"><select id="modalArea" class="form-select"></select></div>
+                <div class="mb-2"><select id="modalSubarea" class="form-select"></select></div>
+                <div class="mb-2"><select id="modalCategoria" class="form-select"></select></div>
+                <div class="mb-2"><select id="modalUnidad" class="form-select"></select></div>
+                <div class="mb-2"><input id="modalStock" type="number" min="0" step="0.1" class="form-control" placeholder="Stock Central"></div>
+                <div class="mb-2"><input id="modalPuntoMinimo" type="number" min="0" step="0.1" class="form-control" placeholder="Punto mínimo"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" id="modalSaveBtn" class="btn btn-primary">Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal movimientos pendientes -->
+<div class="modal fade" id="modalMovimientos" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Movimientos en lista</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted">Revisa los movimientos que están en cola antes de enviarlos.</p>
+                <div class="row g-3">
+                        <div class="col-12 col-lg-6">
+                            <h6 class="text-success">Entradas</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Producto</th>
+                                            <th>Cantidad</th>
+                                            <th>Motivo</th>
+                                            <th>Fecha / hora</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="movimientosModalEntradas">
+                                        <tr><td colspan="4" class="text-muted">Sin entradas agregadas</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="col-12 col-lg-6">
+                            <h6 class="text-danger">Salidas</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Producto</th>
+                                            <th>Cantidad</th>
+                                            <th>Motivo</th>
+                                            <th>Fecha / hora</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="movimientosModalSalidas">
+                                        <tr><td colspan="4" class="text-muted">Sin salidas agregadas</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal movimientos registrados -->
+<div class="modal fade" id="modalMovimientosRegistrados" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Movimientos del día</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted">Entradas y salidas registradas para la fecha seleccionada.</p>
+                <div class="row g-3">
+                    <div class="col-12 col-lg-6">
+                        <h6 class="text-success">Entradas</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Producto</th>
+                                        <th>Cantidad</th>
+                                        <th>Motivo</th>
+                                        <th>Usuario</th>
+                                        <th>Fecha / hora</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="movimientosRegistradosEntradas">
+                                    <tr><td colspan="5" class="text-muted">Sin entradas registradas</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="col-12 col-lg-6">
+                        <h6 class="text-danger">Salidas</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Producto</th>
+                                        <th>Cantidad</th>
+                                        <th>Motivo</th>
+                                        <th>Usuario</th>
+                                        <th>Fecha / hora</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="movimientosRegistradosSalidas">
+                                    <tr><td colspan="5" class="text-muted">Sin salidas registradas</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal envíos procesados -->
+<div class="modal fade" id="modalProcesados" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Envíos procesados</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Sede</th>
+                                <th>Turno</th>
+                                <th>Producto</th>
+                                <th>Pedida</th>
+                                <th>Entregada</th>
+                                <th>Diferencia</th>
+                                <th>Fecha/Hora</th>
+                            </tr>
+                        </thead>
+                        <tbody id="procesadosBody"></tbody>
+                    </table>
+                </div>
+                <div id="procesadosEmpty" class="alert alert-light border mt-3 mb-0 d-none">No hay envíos procesados para la fecha seleccionada.</div>
+            </div>
+        </div>
+    </div>
+</div>
+<div id="toastContainer" aria-live="polite" aria-atomic="true"></div>
+<script type="application/json" id="almacen-products-data">{{ almacen_products | tojson }}</script>
+<script type="application/json" id="subareas-data">{{ subareas_config | tojson }}</script>
+<script>
+    window.subareasConfig = JSON.parse(document.getElementById('subareas-data').textContent || '{}');
+</script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        (function () {
+            const almacenDataElement = document.getElementById('almacen-products-data');
+            const productos = almacenDataElement ? (JSON.parse(almacenDataElement.textContent || '[]') || []) : [];
+            window.almacenProducts = productos;
+
+            const productMap = new Map(productos.map((item) => [String(item.id), item]));
+            const entradaSearchInput = document.getElementById('entradaProductSearch');
+            const salidaSearchInput = document.getElementById('salidaProductSearch');
+            const entradaHiddenId = document.getElementById('entradaProductoId');
+            const salidaHiddenId = document.getElementById('salidaProductoId');
+            const entradaUnidad = document.getElementById('entradaUnidad');
+            const salidaStockValue = document.getElementById('salidaStockValue');
+            const salidaStockUnit = document.getElementById('salidaStockUnit');
+            const entradaMessage = document.getElementById('entradaMessage');
+            const salidaMessage = document.getElementById('salidaMessage');
+            const entradaPreviewCells = {
+                producto: document.getElementById('entradaPreviewProducto'),
+                unidad: document.getElementById('entradaPreviewUnidad'),
+                cantidad: document.getElementById('entradaPreviewCantidad'),
+                motivo: document.getElementById('entradaPreviewMotivo'),
+            };
+            const salidaPreviewCells = {
+                producto: document.getElementById('salidaPreviewProducto'),
+                stock: document.getElementById('salidaPreviewStock'),
+                cantidad: document.getElementById('salidaPreviewCantidad'),
+                motivo: document.getElementById('salidaPreviewMotivo'),
+                postStock: document.getElementById('salidaPreviewPostStock'),
+            };
+            const entradaQueueBody = document.getElementById('entradaQueueBody');
+            const salidaQueueBody = document.getElementById('salidaQueueBody');
+            const entradaAddBtn = document.getElementById('entradaAddItem');
+            const salidaAddBtn = document.getElementById('salidaAddItem');
+            const entradaRegisterBtn = document.getElementById('entradaRegisterBtn');
+            const salidaRegisterBtn = document.getElementById('salidaRegisterBtn');
+            const entradaSuggestions = document.getElementById('entradaSuggestions');
+            const salidaSuggestions = document.getElementById('salidaSuggestions');
+            const movimientosModalEntradas = document.getElementById('movimientosModalEntradas');
+            const movimientosModalSalidas = document.getElementById('movimientosModalSalidas');
+
+            const queueState = {
+                entrada: [],
+                salida: [],
+            };
+
+            const suggestionState = {
+                entrada: { filtered: [], active: -1 },
+                salida: { filtered: [], active: -1 },
+            };
+
+            const formatNumber = (value) => {
+                const numeric = Number(value);
+                if (!Number.isFinite(numeric)) {
+                    return '-';
+                }
+                return numeric.toLocaleString('es-ES', { maximumFractionDigits: 2 });
+            };
+
+            const formatTimestamp = (value) => {
+                if (!value) {
+                    return '-';
+                }
+                const date = new Date(value);
+                if (!Number.isFinite(date.getTime())) {
+                    return '-';
+                }
+                return date.toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });
+            };
+
+            const showMessage = (element, text, status) => {
+                if (!element) return;
+                element.textContent = text || '';
+                element.classList.remove('text-success', 'text-danger', 'text-muted');
+                if (status === 'success') {
+                    element.classList.add('text-success');
+                } else if (status === 'error') {
+                    element.classList.add('text-danger');
+                } else if (text) {
+                    element.classList.add('text-muted');
+                }
+            };
+
+            const findProducto = (id) => productMap.get(String(id)) || null;
+
+            const updateEntradaUnidad = () => {
+                const producto = findProducto(entradaHiddenId.value);
+                entradaUnidad.value = producto ? producto.unidad || '' : '';
+            };
+
+            const updateSalidaStock = () => {
+                const producto = findProducto(salidaHiddenId.value);
+                if (producto) {
+                    salidaStockValue.textContent = formatNumber(producto.stock);
+                    salidaStockUnit.textContent = producto.unidad || '';
+                } else {
+                    salidaStockValue.textContent = '0';
+                    salidaStockUnit.textContent = '';
+                }
+            };
+
+            const getSelectedProductId = (tipo) => {
+                return tipo === 'entrada' ? entradaHiddenId.value : salidaHiddenId.value;
+            };
+
+            const updatePreviewData = (tipo) => {
+                const cantidadInput = document.getElementById(`${tipo}Cantidad`);
+                const motivoInput = document.getElementById(`${tipo}Motivo`);
+                const producto = findProducto(getSelectedProductId(tipo));
+                const cantidad = cantidadInput ? parseFloat(cantidadInput.value) || 0 : 0;
+                const motivo = motivoInput ? motivoInput.value.trim() : '';
+                if (tipo === 'entrada') {
+                    entradaPreviewCells.producto.textContent = producto ? producto.nombre : 'No seleccionado';
+                    entradaPreviewCells.unidad.textContent = producto ? (producto.unidad || '-') : '-';
+                    entradaPreviewCells.cantidad.textContent = cantidad ? formatNumber(cantidad) : '-';
+                    entradaPreviewCells.motivo.textContent = motivo || '-';
+                }
+                if (tipo === 'salida') {
+                    const stockActual = producto ? Number(producto.stock) : 0;
+                    salidaPreviewCells.producto.textContent = producto ? producto.nombre : 'No seleccionado';
+                    salidaPreviewCells.stock.textContent = producto ? formatNumber(stockActual) : '-';
+                    salidaPreviewCells.cantidad.textContent = cantidad ? formatNumber(cantidad) : '-';
+                    salidaPreviewCells.motivo.textContent = motivo || '-';
+                    salidaPreviewCells.postStock.textContent = producto ? formatNumber(Math.max(stockActual - cantidad, 0)) : '-';
+                }
+            };
+
+            const clearSuggestions = (tipo) => {
+                const list = tipo === 'entrada' ? entradaSuggestions : salidaSuggestions;
+                const state = suggestionState[tipo];
+                if (list) {
+                    list.innerHTML = '';
+                    list.classList.add('d-none');
+                }
+                state.filtered = [];
+                state.active = -1;
+            };
+
+            const highlightSuggestion = (tipo, index) => {
+                const list = tipo === 'entrada' ? entradaSuggestions : salidaSuggestions;
+                const state = suggestionState[tipo];
+                if (!list) return;
+                const items = list.querySelectorAll('li');
+                items.forEach((item, idx) => {
+                    item.classList.toggle('active', idx === index);
+                });
+                state.active = index;
+            };
+
+            const renderSuggestions = (tipo, query) => {
+                const list = tipo === 'entrada' ? entradaSuggestions : salidaSuggestions;
+                const state = suggestionState[tipo];
+                if (!list) return;
+                const trimmed = query.trim().toLowerCase();
+                if (!trimmed) {
+                    clearSuggestions(tipo);
+                    return;
+                }
+                state.filtered = productos
+                    .filter((item) => item.nombre.toLowerCase().includes(trimmed))
+                    .slice(0, 7);
+                if (!state.filtered.length) {
+                    list.innerHTML = '<li class="list-group-item text-muted">Producto no encontrado</li>';
+                    list.classList.remove('d-none');
+                    state.active = -1;
+                    return;
+                }
+                list.innerHTML = state.filtered
+                    .map((item) => `<li class="list-group-item list-group-item-action" role="option" tabindex="-1" data-id="${item.id}">${item.nombre} <span class="small text-muted">(${item.unidad || 'unidad'})</span></li>`)
+                    .join('');
+                list.classList.remove('d-none');
+                highlightSuggestion(tipo, 0);
+            };
+
+            const selectProductSuggestion = (tipo, product) => {
+                const searchInput = tipo === 'entrada' ? entradaSearchInput : salidaSearchInput;
+                const hiddenInput = tipo === 'entrada' ? entradaHiddenId : salidaHiddenId;
+                if (!product || !hiddenInput || !searchInput) return;
+                searchInput.value = product.nombre;
+                hiddenInput.value = product.id;
+                clearSuggestions(tipo);
+                if (tipo === 'entrada') {
+                    updateEntradaUnidad();
+                } else {
+                    updateSalidaStock();
+                }
+                updatePreviewData(tipo);
+                document.getElementById(`${tipo}Cantidad`).focus();
+            };
+
+            const handleSuggestionSelection = (tipo, event) => {
+                const target = event.target.closest('li[data-id]');
+                if (!target) return;
+                const id = target.dataset.id;
+                const product = findProducto(id);
+                selectProductSuggestion(tipo, product);
+            };
+
+            const moveSuggestion = (tipo, direction) => {
+                const state = suggestionState[tipo];
+                if (!state.filtered.length) return;
+                const next = (state.active + direction + state.filtered.length) % state.filtered.length;
+                highlightSuggestion(tipo, next);
+            };
+
+            const setupAutocomplete = (tipo) => {
+                const searchInput = tipo === 'entrada' ? entradaSearchInput : salidaSearchInput;
+                const suggestions = tipo === 'entrada' ? entradaSuggestions : salidaSuggestions;
+                if (!searchInput || !suggestions) return;
+                searchInput.addEventListener('input', () => {
+                    const hidden = document.getElementById(`${tipo}ProductoId`);
+                    if (hidden) hidden.value = '';
+                    renderSuggestions(tipo, searchInput.value);
+                    updatePreviewData(tipo);
+                });
+                searchInput.addEventListener('keydown', (event) => {
+                    const state = suggestionState[tipo];
+                    if (event.key === 'ArrowDown') {
+                        event.preventDefault();
+                        moveSuggestion(tipo, 1);
+                    } else if (event.key === 'ArrowUp') {
+                        event.preventDefault();
+                        moveSuggestion(tipo, -1);
+                    } else if (event.key === 'Enter') {
+                        event.preventDefault();
+                        if (state.filtered.length && state.active >= 0) {
+                            const product = state.filtered[state.active];
+                            selectProductSuggestion(tipo, product);
+                        }
+                    } else if (event.key === 'Escape') {
+                        clearSuggestions(tipo);
+                    }
+                });
+                suggestions.addEventListener('click', (event) => handleSuggestionSelection(tipo, event));
+                document.addEventListener('click', (event) => {
+                    if (!event.target.closest(`#${tipo}ProductSearch`) && !event.target.closest(`#${tipo}Suggestions`)) {
+                        clearSuggestions(tipo);
+                    }
+                });
+            };
+
+            const currentEntryData = (tipo) => {
+                const cantidadInput = document.getElementById(`${tipo}Cantidad`);
+                const motivoInput = document.getElementById(`${tipo}Motivo`);
+                const productId = getSelectedProductId(tipo);
+                const producto = findProducto(productId);
+                if (!producto || !cantidadInput || !motivoInput) {
+                    return null;
+                }
+                const cantidad = parseFloat(cantidadInput.value) || 0;
+                return {
+                    id: productId,
+                    nombre: producto.nombre,
+                    unidad: producto.unidad || '',
+                    cantidad,
+                    motivo: motivoInput.value.trim(),
+                    queuedAt: new Date().toISOString(),
+                    stockActual: Number(producto.stock),
+                };
+            };
+
+            const updateQueueButtons = (tipo) => {
+                const registerBtn = tipo === 'entrada' ? entradaRegisterBtn : salidaRegisterBtn;
+                if (!registerBtn) return;
+                registerBtn.disabled = queueState[tipo].length === 0;
+            };
+
+            const renderMovimientosModal = (activeTipo) => {
+                const sections = [
+                    { tipo: 'entrada', container: movimientosModalEntradas, emptyText: 'Sin entradas agregadas' },
+                    { tipo: 'salida', container: movimientosModalSalidas, emptyText: 'Sin salidas agregadas' },
+                ];
+                sections.forEach(({ tipo, container, emptyText }) => {
+                    if (!container) return;
+                    if (activeTipo && activeTipo !== tipo) return;
+                    const queue = queueState[tipo];
+                    if (!queue.length) {
+                        container.innerHTML = `<tr><td colspan="4" class="text-muted">${emptyText}</td></tr>`;
+                        return;
+                    }
+                    container.innerHTML = queue
+                        .map(
+                            (entry) => `<tr><td>${entry.nombre}</td><td>${formatNumber(entry.cantidad)}</td><td>${entry.motivo || '-'}</td><td>${formatTimestamp(entry.queuedAt)}</td></tr>`
+                        )
+                        .join('');
+                });
+            };
+
+            const renderQueue = (tipo) => {
+                const tableBody = tipo === 'entrada' ? entradaQueueBody : salidaQueueBody;
+                const queue = queueState[tipo];
+                if (!tableBody) return;
+                tableBody.innerHTML = '';
+                if (!queue.length) {
+                    const emptyCols = tipo === 'entrada' ? 5 : 6;
+                    tableBody.innerHTML = `<tr><td colspan="${emptyCols}" class="text-muted text-center">Ningún producto agregado aún</td></tr>`;
+                    return;
+                }
+                queue.forEach((entry, index) => {
+                    const cols = [
+                        `<td>${entry.nombre}</td>`,
+                        `<td>${entry.unidad || '-'}</td>`,
+                        `<td>${formatNumber(entry.cantidad)}</td>`,
+                        `<td>${entry.motivo || '-'}</td>`,
+                    ];
+                    if (tipo === 'salida') {
+                        cols.push(`<td>${formatNumber(Math.max(entry.stockActual - entry.cantidad, 0))}</td>`);
+                    }
+                    cols.push(`<td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary queue-remove" data-tipo="${tipo}" data-index="${index}">Quitar</button></td>`);
+                    tableBody.insertAdjacentHTML('beforeend', `<tr>${cols.join('')}</tr>`);
+                });
+                renderMovimientosModal(tipo);
+            };
+
+            const removeQueueItem = (tipo, index) => {
+                if (!Array.isArray(queueState[tipo]) || index < 0 || index >= queueState[tipo].length) return;
+                queueState[tipo].splice(index, 1);
+                renderQueue(tipo);
+                updateQueueButtons(tipo);
+            };
+
+            const focusProductInput = (tipo) => {
+                const input = tipo === 'entrada' ? entradaSearchInput : salidaSearchInput;
+                if (input) {
+                    input.focus();
+                    input.select();
+                }
+            };
+
+            const resetEntryForm = (tipo) => {
+                const search = tipo === 'entrada' ? entradaSearchInput : salidaSearchInput;
+                const hidden = tipo === 'entrada' ? entradaHiddenId : salidaHiddenId;
+                const cantidad = document.getElementById(`${tipo}Cantidad`);
+                const motivo = document.getElementById(`${tipo}Motivo`);
+                if (search) {
+                    search.value = '';
+                }
+                if (hidden) {
+                    hidden.value = '';
+                }
+                if (cantidad) {
+                    cantidad.value = '';
+                }
+                if (motivo) {
+                    motivo.value = '';
+                }
+                if (tipo === 'entrada') {
+                    clearSuggestions('entrada');
+                } else {
+                    clearSuggestions('salida');
+                }
+                updatePreviewData(tipo);
+            };
+
+            const addToQueue = (tipo) => {
+                const messageElement = tipo === 'entrada' ? entradaMessage : salidaMessage;
+                const entry = currentEntryData(tipo);
+                if (!entry) {
+                    showMessage(messageElement, 'Selecciona un producto válido antes de agregar', 'error');
+                    return;
+                }
+                if (entry.cantidad <= 0) {
+                    showMessage(messageElement, 'Ingresa una cantidad positiva', 'error');
+                    return;
+                }
+                if (!entry.motivo) {
+                    showMessage(messageElement, 'Escribe un motivo', 'error');
+                    return;
+                }
+                queueState[tipo].push(entry);
+                renderQueue(tipo);
+                updateQueueButtons(tipo);
+                showMessage(messageElement, 'Producto agregado a la lista', 'muted');
+                resetEntryForm(tipo);
+                focusProductInput(tipo);
+            };
+
+            const sendMovementPayload = async (payload) => {
+                try {
+                    const response = await fetch('/api/almacen/movimiento', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Accept: 'application/json',
+                        },
+                        body: JSON.stringify(payload),
+                        credentials: 'same-origin',
+                    });
+                    const data = await response.json();
+                    if (!response.ok || !data.ok) {
+                        return { success: false, error: data.error || 'No se pudo registrar el movimiento' };
+                    }
+                    return { success: true, data };
+                } catch (err) {
+                    return { success: false, error: 'Error de conexión' };
+                }
+            };
+
+            const processQueue = async (tipo) => {
+                const messageElement = tipo === 'entrada' ? entradaMessage : salidaMessage;
+                const queue = [...queueState[tipo]];
+                if (!queue.length) {
+                    showMessage(messageElement, 'Agrega al menos un producto antes de registrar', 'error');
+                    return;
+                }
+                const registerBtn = tipo === 'entrada' ? entradaRegisterBtn : salidaRegisterBtn;
+                if (registerBtn) {
+                    registerBtn.disabled = true;
+                    registerBtn.textContent = tipo === 'entrada' ? 'Registrando...' : 'Registrando...';
+                }
+                for (const entry of queue) {
+                    const payload = {
+                        tipo,
+                        id_producto: entry.id,
+                        cantidad: entry.cantidad,
+                        motivo: entry.motivo,
+                    };
+                    const result = await sendMovementPayload(payload);
+                    if (!result.success) {
+                        showMessage(messageElement, result.error, 'error');
+                        if (registerBtn) {
+                            registerBtn.disabled = queueState[tipo].length === 0;
+                            registerBtn.textContent = tipo === 'entrada' ? 'Registrar entradas' : 'Registrar salidas';
+                        }
+                        return;
+                    }
+                    const producto = findProducto(entry.id);
+                    if (producto) {
+                        producto.stock = result.data.nuevo_stock;
+                    }
+                }
+                queueState[tipo] = [];
+                renderQueue(tipo);
+                updateQueueButtons(tipo);
+                updatePreviewData(tipo);
+                if (tipo === 'salida') {
+                    updateSalidaStock();
+                }
+                if (registerBtn) {
+                    registerBtn.textContent = tipo === 'entrada' ? 'Registrar entradas' : 'Registrar salidas';
+                }
+                showMessage(messageElement, `Se registraron ${queue.length} ${tipo === 'entrada' ? 'entradas' : 'salidas'}`, 'success');
+            };
+
+            const attachQueueHandlers = () => {
+                const handleQueueClick = (event) => {
+                    const button = event.target.closest('.queue-remove');
+                    if (!button) return;
+                    const tipo = button.dataset.tipo;
+                    const index = Number(button.dataset.index);
+                    removeQueueItem(tipo, index);
+                };
+                if (entradaQueueBody) {
+                    entradaQueueBody.addEventListener('click', handleQueueClick);
+                }
+                if (salidaQueueBody) {
+                    salidaQueueBody.addEventListener('click', handleQueueClick);
+                }
+            };
+
+            const updatePreviewOnInput = (tipo) => {
+                const cantidad = document.getElementById(`${tipo}Cantidad`);
+                const motivo = document.getElementById(`${tipo}Motivo`);
+                const search = document.getElementById(`${tipo}ProductSearch`);
+                if (cantidad) {
+                    cantidad.addEventListener('input', () => updatePreviewData(tipo));
+                    cantidad.addEventListener('keydown', (event) => {
+                        if (event.key === 'Enter') {
+                            event.preventDefault();
+                            document.getElementById(`${tipo}Motivo`).focus();
+                        }
+                    });
+                }
+                if (motivo) {
+                    motivo.addEventListener('input', () => updatePreviewData(tipo));
+                    motivo.addEventListener('keydown', (event) => {
+                        if (event.key === 'Enter') {
+                            event.preventDefault();
+                            const addBtn = tipo === 'entrada' ? entradaAddBtn : salidaAddBtn;
+                            addBtn?.focus();
+                        }
+                    });
+                }
+                if (search) {
+                    search.addEventListener('keydown', (event) => {
+                        if (event.key === 'Enter') {
+                            if (tipo === 'salida') {
+                                document.getElementById('salidaCantidad').focus();
+                            }
+                        }
+                    });
+                }
+            };
+
+            const handleShiftEnter = (event) => {
+                if (event.key !== 'Enter' || !event.shiftKey) return;
+                const activeForm = event.target.closest('#entradaForm') ? 'entrada' : event.target.closest('#salidaForm') ? 'salida' : null;
+                if (!activeForm) return;
+                event.preventDefault();
+                const registerBtn = activeForm === 'entrada' ? entradaRegisterBtn : salidaRegisterBtn;
+                if (registerBtn && !registerBtn.disabled) {
+                    processQueue(activeForm);
+                }
+            };
+
+            setupAutocomplete('entrada');
+            setupAutocomplete('salida');
+            attachQueueHandlers();
+            updatePreviewOnInput('entrada');
+            updatePreviewOnInput('salida');
+            updateEntradaUnidad();
+            updateSalidaStock();
+            renderQueue('entrada');
+            renderQueue('salida');
+            updatePreviewData('entrada');
+            updatePreviewData('salida');
+
+            if (entradaAddBtn) {
+                entradaAddBtn.addEventListener('click', () => addToQueue('entrada'));
+                entradaAddBtn.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        addToQueue('entrada');
+                    }
+                });
+            }
+            if (salidaAddBtn) {
+                salidaAddBtn.addEventListener('click', () => addToQueue('salida'));
+                salidaAddBtn.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        addToQueue('salida');
+                    }
+                });
+            }
+            if (entradaRegisterBtn) {
+                entradaRegisterBtn.addEventListener('click', () => processQueue('entrada'));
+            }
+            if (salidaRegisterBtn) {
+                salidaRegisterBtn.addEventListener('click', () => processQueue('salida'));
+            }
+            document.addEventListener('keydown', handleShiftEnter);
+        })();
+    });
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
