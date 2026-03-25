@@ -38,6 +38,13 @@ from models import (
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret")
 
+database_url = os.getenv("DATABASE_URL")
+if database_url:
+    database_url = database_url.replace("postgres://", "postgresql://")
+else:
+    database_url = "sqlite:///database.db"
+app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+
 RESTAURANT_NAME = "Punto 29"
 CENTRAL_SEDE_ID = 1
 SUBAREAS_CONFIG: dict[str, list[dict[str, str]]] = {
@@ -67,7 +74,7 @@ SUBAREA_POSITION: dict[str, dict[str, int]] = {
     for area_id, items in SUBAREAS_CONFIG.items()
 }
 
-engine = get_engine(os.getenv("DATABASE_URL", "sqlite:///database.db"))
+engine = get_engine(database_url)
 init_db(engine)
 with Session(engine) as db:
     seed_data(db)
