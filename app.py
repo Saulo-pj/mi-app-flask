@@ -11,7 +11,7 @@ from uuid import uuid4
 from flask import Flask, jsonify, redirect, render_template, request, session, send_file, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 from openpyxl import Workbook, load_workbook
-from sqlalchemy import and_, select, delete
+from sqlalchemy import and_, select, delete, inspect
 from sqlalchemy.orm import Session
 
 from models import (
@@ -75,6 +75,8 @@ SUBAREA_POSITION: dict[str, dict[str, int]] = {
 }
 
 engine = get_engine(database_url)
+inspector = inspect(engine)
+columns = [col['name'] for col in inspector.get_columns('Productos')]
 init_db(engine)
 with Session(engine) as db:
     seed_data(db)
