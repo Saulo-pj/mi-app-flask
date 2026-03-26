@@ -77,10 +77,6 @@ SUBAREA_POSITION: dict[str, dict[str, int]] = {
 }
 
 engine = get_engine(database_url)
-init_db(engine)
-with Session(engine) as db:
-    seed_data(db)
-    ensure_default_user_management(db)
 
 CREATION_PASSWORD_KEY = "creation_password"
 DEFAULT_CREATION_PASSWORD = os.getenv("CHECKLIST_CREATION_PASSWORD", "almacen123")
@@ -200,6 +196,12 @@ def ensure_default_user_management(session: Session) -> None:
                 )
             )
     session.commit()
+
+
+init_db(engine)
+with Session(engine) as db:
+    seed_data(db)
+    ensure_default_user_management(db)
 
 
 def _parse_user_updates(prefix: str, reference_list: list[UserEntry], form_data) -> tuple[list[UserEntry] | None, str | None]:
