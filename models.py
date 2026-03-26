@@ -11,6 +11,7 @@ from sqlalchemy import (
     Text,
     create_engine,
     func,
+    inspect,
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
@@ -172,12 +173,13 @@ def get_engine(db_path: str = "sqlite:///database.db"):
 def init_db(engine) -> None:
     Base.metadata.create_all(engine)
     with engine.connect() as conn:
-        columns = [row[1] for row in conn.execute(text("PRAGMA table_info('Productos')")).fetchall()]
+        inspector = inspect(engine)
+        columns = [col["name"] for col in inspector.get_columns("Productos")]
         if "ID_Area" not in columns:
             conn.execute(text("ALTER TABLE Productos ADD COLUMN ID_Area TEXT"))
         if "Subarea" not in columns:
             conn.execute(text("ALTER TABLE Productos ADD COLUMN Subarea TEXT"))
-        detalle_columns = [row[1] for row in conn.execute(text("PRAGMA table_info('Detalle_Pedido')")).fetchall()]
+        detalle_columns = [col["name"] for col in inspector.get_columns("Detalle_Pedido")]
         if "Estado_Sede" not in detalle_columns:
             conn.execute(text("ALTER TABLE Detalle_Pedido ADD COLUMN Estado_Sede TEXT DEFAULT 'Pendiente'"))
         conn.commit()
