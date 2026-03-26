@@ -7,11 +7,12 @@ from io import BytesIO
 import re
 from pathlib import Path
 from uuid import uuid4
+from collections import defaultdict
 
 from flask import Flask, jsonify, redirect, render_template, request, session, send_file, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 from openpyxl import Workbook, load_workbook
-from sqlalchemy import and_, select, delete, inspect
+from sqlalchemy import and_, select, delete, func
 from sqlalchemy.orm import Session
 
 from models import (
@@ -29,6 +30,7 @@ from models import (
     Unidad,
     CierreCaja,
     Movimiento,
+    UsuarioGestion,
     get_engine,
     init_db,
     seed_data,
@@ -75,11 +77,10 @@ SUBAREA_POSITION: dict[str, dict[str, int]] = {
 }
 
 engine = get_engine(database_url)
-inspector = inspect(engine)
-columns = [col['name'] for col in inspector.get_columns('Productos')]
 init_db(engine)
 with Session(engine) as db:
     seed_data(db)
+    ensure_default_user_management(db)
 
 CREATION_PASSWORD_KEY = "creation_password"
 DEFAULT_CREATION_PASSWORD = os.getenv("CHECKLIST_CREATION_PASSWORD", "almacen123")
@@ -116,7 +117,24 @@ DEFAULT_USER_MANAGEMENT = {
     "movimientos": DEFAULT_USER_MANAGEMENT_MOVIMIENTOS,
 }
 
-ADMIN_CREDENTIALS = {"usuario": "admin", "password": "admin"}
+DEFAULT_ADMIN_CREDENTIALS = {"usuario": "admin", "password": "admin"}
+ADMIN_USER_KEY = "admin_usuario"
+ADMIN_PASSWORD_KEY = "admin_password"
+ALMACEN_USER_KEY = "almacen_usuario"
+ALMACEN_PASSWORD_KEY = "almacen_password"
+
+
+def get_setting_value(session: Session, key: str, default: str) -> str:
+    ajuste = session.get(Ajuste, key)
+    return ajuste.Valor if ajuste else default
+
+
+def set_setting_value(session: Session, key: str, value: str) -> None:
+    ajuste = session.get(Ajuste, key)
+    if ajuste:
+        ajuste.Valor = value
+    else:
+        session.add(Ajuste(Clave=key, Valor=value))
 
 MAX_CONCURRENT_SESSIONS = int(os.getenv("MAX_CONCURRENT_SESSIONS", "5"))
 SESSION_ACTIVITY_WINDOW = timedelta(minutes=30)
@@ -126,89 +144,62 @@ ACTIVE_SESSION_TOKENS: dict[str, datetime] = {}
 UserEntry = dict[str, str | int | None]
 
 
-def _normalize_user_entry(entry, fallback_entry: UserEntry | None):
-    fallback_entry = fallback_entry or {}
-    if not isinstance(entry, dict):
-        entry = {}
-    label = str(entry.get("label") or fallback_entry.get("label") or "Usuario").strip()
-    username = str(entry.get("username") or fallback_entry.get("username") or "").strip()
-    password = str(entry.get("password") or fallback_entry.get("password") or "")
-    raw_sede = entry.get("id_sede", fallback_entry.get("id_sede"))
-    try:
-        id_sede = int(raw_sede) if raw_sede not in (None, "") else None
-    except (TypeError, ValueError):
-        id_sede = None
-    if id_sede is None and fallback_entry.get("id_sede") not in (None, ""):
-        try:
-            id_sede = int(fallback_entry.get("id_sede"))
-        except (TypeError, ValueError):
-            id_sede = None
-    id_turno = str(entry.get("id_turno") or fallback_entry.get("id_turno") or "").strip()
-    id_area = str(entry.get("id_area") or fallback_entry.get("id_area") or "").strip()
-    return {
-        "label": label,
-        "username": username,
-        "password": password,
-        "id_sede": id_sede,
-        "id_turno": id_turno,
-        "id_area": id_area,
-    }
+def load_user_management_state() -> dict[str, list[UserEntry]]:
+    grouped: dict[str, list[UserEntry]] = defaultdict(list)
+    with Session(engine) as db:
+        rows = db.scalars(select(UsuarioGestion).order_by(UsuarioGestion.Perfil, UsuarioGestion.Orden)).all()
+        for row in rows:
+            grouped.setdefault(row.Perfil, []).append(
+                {
+                    "label": row.Label,
+                    "username": row.Username,
+                    "password": row.Password,
+                    "id_sede": row.ID_Sede,
+                    "id_turno": row.ID_Turno or "",
+                    "id_area": row.ID_Area or "",
+                }
+            )
+    return grouped
 
 
-def _ensure_user_list(raw_list, default_list):
-    normalized: list[UserEntry] = []
-    if isinstance(raw_list, list) and raw_list:
-        for idx, item in enumerate(raw_list):
-            fallback_entry = default_list[idx] if idx < len(default_list) else {
-                "label": f"Usuario {idx + 1}",
-                "username": "",
-                "password": "",
-                "id_sede": None,
-                "id_turno": "",
-                "id_area": "",
-            }
-            normalized.append(_normalize_user_entry(item, fallback_entry))
-    else:
-        normalized = [_normalize_user_entry(entry, entry) for entry in default_list]
-    if not normalized:
-        normalized = [_normalize_user_entry(entry, entry) for entry in default_list]
-    return normalized
+def persist_user_group(perfil: str, entries: list[UserEntry]) -> None:
+    with Session(engine) as db:
+        db.execute(delete(UsuarioGestion).where(UsuarioGestion.Perfil == perfil))
+        for idx, entry in enumerate(entries):
+            db.add(
+                UsuarioGestion(
+                    Perfil=perfil,
+                    Label=entry.get("label", f"Usuario {idx + 1}"),
+                    Username=entry.get("username", ""),
+                    Password=entry.get("password", ""),
+                    ID_Sede=entry.get("id_sede"),
+                    ID_Turno=entry.get("id_turno") or "",
+                    ID_Area=entry.get("id_area") or "",
+                    Orden=idx,
+                )
+            )
+        db.commit()
 
 
-USER_MANAGEMENT_FILE: Path | None = None
-
-
-def _get_user_management_path() -> Path:
-    global USER_MANAGEMENT_FILE
-    if USER_MANAGEMENT_FILE is None:
-        USER_MANAGEMENT_FILE = Path(app.root_path) / "user_management.json"
-    return USER_MANAGEMENT_FILE
-
-
-def load_user_management() -> dict[str, list[UserEntry]]:
-    path = _get_user_management_path()
-    if not path.exists():
-        return {
-            "cocina": _ensure_user_list(None, DEFAULT_USER_MANAGEMENT_COCINA),
-            "caja": _ensure_user_list(None, DEFAULT_USER_MANAGEMENT_CAJA),
-            "cierre": _ensure_user_list(None, DEFAULT_USER_MANAGEMENT_CIERRE),
-            "movimientos": _ensure_user_list(None, DEFAULT_USER_MANAGEMENT_MOVIMIENTOS),
-        }
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except ValueError:
-        raw = {}
-    return {
-        "cocina": _ensure_user_list(raw.get("cocina"), DEFAULT_USER_MANAGEMENT_COCINA),
-        "caja": _ensure_user_list(raw.get("caja"), DEFAULT_USER_MANAGEMENT_CAJA),
-        "cierre": _ensure_user_list(raw.get("cierre"), DEFAULT_USER_MANAGEMENT_CIERRE),
-        "movimientos": _ensure_user_list(raw.get("movimientos"), DEFAULT_USER_MANAGEMENT_MOVIMIENTOS),
-    }
-
-
-def save_user_management(state: dict[str, list[UserEntry]]) -> None:
-    path = _get_user_management_path()
-    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+def ensure_default_user_management(session: Session) -> None:
+    existing = session.scalar(select(func.count()).select_from(UsuarioGestion)) or 0
+    if existing:
+        return
+    for perfil, defaults in DEFAULT_USER_MANAGEMENT.items():
+        for idx, default in enumerate(defaults):
+            session.add(
+                UsuarioGestion(
+                    Perfil=perfil,
+                    Label=default["label"],
+                    Username=default["username"],
+                    Password=default["password"],
+                    ID_Sede=default.get("id_sede"),
+                    ID_Turno=default.get("id_turno", ""),
+                    ID_Area=default.get("id_area", ""),
+                    Orden=idx,
+                )
+            )
+    session.commit()
 
 
 def _parse_user_updates(prefix: str, reference_list: list[UserEntry], form_data) -> tuple[list[UserEntry] | None, str | None]:
@@ -252,20 +243,6 @@ def _parse_user_updates(prefix: str, reference_list: list[UserEntry], form_data)
     return updated, None
 
 
-def update_user_management(cocina_list: list[UserEntry], caja_list: list[UserEntry], cierre_list: list[UserEntry], movimientos_list: list[UserEntry]) -> None:
-    global USER_MANAGEMENT_STATE
-    USER_MANAGEMENT_STATE = {
-        "cocina": cocina_list,
-        "caja": caja_list,
-        "cierre": cierre_list,
-        "movimientos": movimientos_list,
-    }
-    save_user_management(USER_MANAGEMENT_STATE)
-
-
-USER_MANAGEMENT_STATE = load_user_management()
-
-
 def _cleanup_inactive_sessions() -> None:
     now = datetime.utcnow()
     stale_tokens = [token for token, last_seen in ACTIVE_SESSION_TOKENS.items() if now - last_seen > SESSION_ACTIVITY_WINDOW]
@@ -305,15 +282,25 @@ def find_user_entry(username: str, password: str, groups: str | list[str] | None
     if not username or not password:
         return None
     if groups is None:
-        group_names = USER_MANAGEMENT_STATE.keys()
+        group_names: list[str] | None = None
     elif isinstance(groups, str):
         group_names = [groups]
     else:
         group_names = groups
-    for group_name in group_names:
-        for entry in USER_MANAGEMENT_STATE.get(group_name, []):
-            if entry.get("username") == username and entry.get("password") == password:
-                return entry
+    consulta = select(UsuarioGestion)
+    if group_names:
+        consulta = consulta.where(UsuarioGestion.Perfil.in_(group_names))
+    with Session(engine) as db:
+        for row in db.scalars(consulta).all():
+            if row.Username == username and row.Password == password:
+                return {
+                    "label": row.Label,
+                    "username": row.Username,
+                    "password": row.Password,
+                    "id_sede": row.ID_Sede,
+                    "id_turno": row.ID_Turno or "",
+                    "id_area": row.ID_Area or "",
+                }
     return None
 
 
@@ -760,6 +747,14 @@ def login():
         ).all()
         areas = db.scalars(select(Area).order_by(Area.Nombre_Area)).all()
         turnos = db.scalars(select(Turno).order_by(Turno.Nombre_Turno)).all()
+        admin_credentials = {
+            "usuario": get_setting_value(db, ADMIN_USER_KEY, DEFAULT_ADMIN_CREDENTIALS["usuario"]),
+            "password": get_setting_value(db, ADMIN_PASSWORD_KEY, DEFAULT_ADMIN_CREDENTIALS["password"]),
+        }
+        default_almacen_credentials = {
+            "usuario": get_setting_value(db, ALMACEN_USER_KEY, DEFAULT_ALMACEN_CREDENTIALS["usuario"]),
+            "password": get_setting_value(db, ALMACEN_PASSWORD_KEY, DEFAULT_ALMACEN_CREDENTIALS["password"]),
+        }
 
     feedback = None
     feedback_type = None
@@ -779,7 +774,7 @@ def login():
                 username = request.form.get("almacen_usuario", "").strip()
                 password = request.form.get("almacen_password", "")
                 movimientos_entry = find_user_entry(username, password, "movimientos")
-                if username == DEFAULT_ALMACEN_CREDENTIALS["usuario"] and password == DEFAULT_ALMACEN_CREDENTIALS["password"]:
+                if username == default_almacen_credentials["usuario"] and password == default_almacen_credentials["password"]:
                     session["perfil"] = perfil
                     session["movimientos_only"] = False
                     session["id_sede"] = CENTRAL_SEDE_ID
@@ -813,7 +808,7 @@ def login():
                 elif perfil == "admin":
                     username = request.form.get("admin_usuario", "").strip()
                     password = request.form.get("admin_password", "")
-                    valid_admin = username == ADMIN_CREDENTIALS["usuario"] and password == ADMIN_CREDENTIALS["password"]
+                    valid_admin = username == admin_credentials["usuario"] and password == admin_credentials["password"]
                     if valid_admin:
                         session["perfil"] = "admin"
                         selected_sede = sedes[0].ID_Sede if sedes else None
@@ -822,7 +817,7 @@ def login():
                         session["id_sede"] = selected_sede
                         session["id_turno"] = selected_turno
                         session["id_area"] = selected_area
-                        session["id_usuario"] = ADMIN_CREDENTIALS["usuario"]
+                        session["id_usuario"] = admin_credentials["usuario"]
                         session["login_feedback"] = {
                             "type": "success",
                             "text": "Inicio de sesión correcto (Administrador).",
@@ -870,13 +865,13 @@ def login():
         areas=areas,
         turnos=turnos,
         restaurant_name=RESTAURANT_NAME,
-        default_almacen_credentials=DEFAULT_ALMACEN_CREDENTIALS,
-        admin_credentials=ADMIN_CREDENTIALS,
+        default_almacen_credentials=default_almacen_credentials,
+        admin_credentials=admin_credentials,
         feedback=feedback,
         feedback_type=feedback_type,
         active_module=active_module,
         sticky_username=sticky_username,
-        movimientos_users=USER_MANAGEMENT_STATE.get("movimientos", []),
+        movimientos_users=load_user_management_state().get("movimientos", []),
     )
 
 
@@ -1787,13 +1782,21 @@ def almacen_ajustes():
     message = None
     error = None
     message_type = "info"
-    user_management_state = USER_MANAGEMENT_STATE
+    user_management_state = load_user_management_state()
     with Session(engine) as db:
         sedes = db.scalars(
             select(Sede).where(Sede.ID_Sede.in_([17, 20])).order_by(Sede.ID_Sede)
         ).all()
         areas = db.scalars(select(Area).order_by(Area.Nombre_Area)).all()
         turnos = db.scalars(select(Turno).order_by(Turno.Nombre_Turno)).all()
+        admin_credentials = {
+            "usuario": get_setting_value(db, ADMIN_USER_KEY, DEFAULT_ADMIN_CREDENTIALS["usuario"]),
+            "password": get_setting_value(db, ADMIN_PASSWORD_KEY, DEFAULT_ADMIN_CREDENTIALS["password"]),
+        }
+        default_almacen_credentials = {
+            "usuario": get_setting_value(db, ALMACEN_USER_KEY, DEFAULT_ALMACEN_CREDENTIALS["usuario"]),
+            "password": get_setting_value(db, ALMACEN_PASSWORD_KEY, DEFAULT_ALMACEN_CREDENTIALS["password"]),
+        }
     if request.method == "POST":
         action = request.form.get("form_action", "change_password")
         if action == "update_users":
@@ -1813,10 +1816,49 @@ def almacen_ajustes():
                         if parse_error:
                             error = parse_error
                         else:
-                            update_user_management(cocina_list, caja_list, cierre_list, movimientos_list)
-                            user_management_state = USER_MANAGEMENT_STATE
+                            persist_user_group("cocina", cocina_list)
+                            persist_user_group("caja", caja_list)
+                            persist_user_group("cierre", cierre_list)
+                            persist_user_group("movimientos", movimientos_list)
+                            user_management_state = load_user_management_state()
                             message = "Credenciales actualizadas correctamente"
                             message_type = "success"
+        elif action == "update_admin_credentials":
+            admin_usuario = request.form.get("admin_usuario", "").strip()
+            admin_password = request.form.get("admin_password", "")
+            almacen_usuario = request.form.get("almacen_usuario", "").strip()
+            almacen_password = request.form.get("almacen_password", "")
+            if not admin_usuario or not admin_password or not almacen_usuario or not almacen_password:
+                error = "Todos los campos son obligatorios"
+            else:
+                with Session(engine) as db:
+                    set_setting_value(db, ADMIN_USER_KEY, admin_usuario)
+                    set_setting_value(db, ADMIN_PASSWORD_KEY, admin_password)
+                    set_setting_value(db, ALMACEN_USER_KEY, almacen_usuario)
+                    set_setting_value(db, ALMACEN_PASSWORD_KEY, almacen_password)
+                    db.commit()
+                admin_credentials = {"usuario": admin_usuario, "password": admin_password}
+                default_almacen_credentials = {"usuario": almacen_usuario, "password": almacen_password}
+                message = "Credenciales críticas guardadas correctamente"
+                message_type = "success"
+        elif action == "update_admin_credentials":
+            admin_usuario = request.form.get("admin_usuario", "").strip()
+            admin_password = request.form.get("admin_password", "")
+            almacen_usuario = request.form.get("almacen_usuario", "").strip()
+            almacen_password = request.form.get("almacen_password", "")
+            if not admin_usuario or not admin_password or not almacen_usuario or not almacen_password:
+                error = "Todos los campos son obligatorios"
+            else:
+                with Session(engine) as db:
+                    set_setting_value(db, ADMIN_USER_KEY, admin_usuario)
+                    set_setting_value(db, ADMIN_PASSWORD_KEY, admin_password)
+                    set_setting_value(db, ALMACEN_USER_KEY, almacen_usuario)
+                    set_setting_value(db, ALMACEN_PASSWORD_KEY, almacen_password)
+                    db.commit()
+                admin_credentials = {"usuario": admin_usuario, "password": admin_password}
+                default_almacen_credentials = {"usuario": almacen_usuario, "password": almacen_password}
+                message = "Credenciales críticas guardadas correctamente"
+                message_type = "success"
         else:
             current_password = request.form.get("current_password", "")
             new_password = request.form.get("new_password", "")
@@ -1847,6 +1889,8 @@ def almacen_ajustes():
         sedes=sedes,
         areas=areas,
         turnos=turnos,
+        admin_credentials=admin_credentials,
+        default_almacen_credentials=default_almacen_credentials,
     )
 
 

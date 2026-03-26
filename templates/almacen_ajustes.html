@@ -48,6 +48,39 @@
         <div class="card-body">
             <div class="d-flex flex-column flex-md-row justify-content-between align-items-start mb-3">
                 <div>
+                    <h2 class="h5 mb-1">Credenciales críticas</h2>
+                    <p class="small text-muted mb-0">Actualiza el usuario y contraseña del administrador global y la cuenta principal del almacén.</p>
+                </div>
+            </div>
+            <form method="post" class="row g-3">
+                <input type="hidden" name="form_action" value="update_admin_credentials">
+                <div class="col-12 col-md-6">
+                    <label class="form-label small mb-1">Usuario administrador</label>
+                    <input type="text" name="admin_usuario" class="form-control form-control-sm" value="{{ admin_credentials.usuario }}" required>
+                </div>
+                <div class="col-12 col-md-6">
+                    <label class="form-label small mb-1">Contraseña administrador</label>
+                    <input type="text" name="admin_password" class="form-control form-control-sm" value="{{ admin_credentials.password }}" required>
+                </div>
+                <div class="col-12 col-md-6">
+                    <label class="form-label small mb-1">Usuario almacén principal</label>
+                    <input type="text" name="almacen_usuario" class="form-control form-control-sm" value="{{ default_almacen_credentials.usuario }}" required>
+                </div>
+                <div class="col-12 col-md-6">
+                    <label class="form-label small mb-1">Contraseña almacén principal</label>
+                    <input type="text" name="almacen_password" class="form-control form-control-sm" value="{{ default_almacen_credentials.password }}" required>
+                </div>
+                <div class="col-12 text-end">
+                    <button type="submit" class="btn btn-outline-primary btn-sm">Guardar credenciales</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mt-3">
+        <div class="card-body">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-start mb-3">
+                <div>
                     <h2 class="h5 mb-1">Administración de usuarios</h2>
                     <p class="small text-muted mb-0">Credenciales predeterminadas para cada módulo. Presiona para copiar usuario y contraseña.</p>
                 </div>

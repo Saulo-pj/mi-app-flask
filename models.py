@@ -56,6 +56,20 @@ class Unidad(Base):
     Nombre_Unidad: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class UsuarioGestion(Base):
+    __tablename__ = "Usuarios_Gestion"
+
+    ID: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    Perfil: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    Label: Mapped[str] = mapped_column(String, nullable=False)
+    Username: Mapped[str] = mapped_column(String, nullable=False)
+    Password: Mapped[str] = mapped_column(String, nullable=False)
+    ID_Sede: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ID_Turno: Mapped[str | None] = mapped_column(String, nullable=True)
+    ID_Area: Mapped[str | None] = mapped_column(String, nullable=True)
+    Orden: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class Producto(Base):
     __tablename__ = "Productos"
 
