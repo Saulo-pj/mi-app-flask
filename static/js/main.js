@@ -362,6 +362,7 @@ async function initChecklist() {
             if (sugBox) sugBox.style.display = 'none';
             if (cantidadInput) cantidadInput.focus();
             updateQuickAddPreview();
+                hideQuickAddAlert();
             hideCreationPanel();
         } else {
             selectedProductId = null;
@@ -373,7 +374,20 @@ async function initChecklist() {
     const newCatUnitBox = document.getElementById('newCatUnitBox');
     const passwordInput = document.getElementById('nuevoProdPassword');
         const btnAgregarChecklist = document.getElementById('btnCrearProductoChecklist');
+        const quickAddAlert = document.getElementById('quickAddAlert');
+        const quickAddAlertCreate = quickAddAlert?.querySelector('[data-create-product]');
+        const quickAddAlertDismiss = quickAddAlert?.querySelector('[data-dismiss-alert]');
         let creationPanelVisible = false;
+
+    function showQuickAddAlert() {
+        if (!quickAddAlert) return;
+        quickAddAlert.classList.remove('d-none');
+    }
+
+    function hideQuickAddAlert() {
+        if (!quickAddAlert) return;
+        quickAddAlert.classList.add('d-none');
+    }
 
     function showCreationPanel() {
         if (newCatUnitBox) newCatUnitBox.classList.add('visible');
@@ -391,16 +405,25 @@ async function initChecklist() {
 
     function revealNewProductCreation() {
         showCreationPanel();
+        hideQuickAddAlert();
         const catSel = document.getElementById('nuevoProdCategoria');
         if (catSel) catSel.focus();
     }
 
     function promptMissingProduct() {
-        showToast('No existe producto. Pulsa "Crear producto" si quieres registrarlo.', 'warning', 5000, {
-            actionText: 'Crear nuevo producto',
-            onAction: revealNewProductCreation,
-            autoHide: false,
+        showQuickAddAlert();
+        hideCreationPanel();
+    }
+
+    if (quickAddAlertCreate) {
+        quickAddAlertCreate.addEventListener('click', (event) => {
+            event.preventDefault();
+            revealNewProductCreation();
         });
+    }
+
+    if (quickAddAlertDismiss) {
+        quickAddAlertDismiss.addEventListener('click', () => hideQuickAddAlert());
     }
 
     function resetQuickAddFields() {
@@ -408,6 +431,7 @@ async function initChecklist() {
         if (cantidadInput) cantidadInput.value = '';
         selectedProductId = null;
         hideCreationPanel();
+        hideQuickAddAlert();
         if (passwordInput) passwordInput.value = '';
         updateQuickAddPreview();
     }
@@ -500,6 +524,7 @@ async function initChecklist() {
 
     if (nombreInput) {
         nombreInput.addEventListener('input', (ev) => {
+            hideQuickAddAlert();
             selectedProductId = null;
             const q = ev.target.value;
             const list = filterSuggestions(q);
@@ -828,11 +853,11 @@ function rowPedidoDetalle(d) {
     return `
         <tr data-detalle="${d.id_detalle}" data-producto="${d.id_producto}" data-cantidad-pedida="${d.cantidad_pedida}" class="${processed ? 'pedido-row-locked' : ''}">
             <td>${d.producto}</td>
-            <td><span class="badge ${d.subarea_badge || 'bg-secondary'}">${d.subarea || 'Sin subárea'}</span></td>
             <td>${d.cantidad_pedida}</td>
             <td>${d.stock_central}</td>
             <td class="text-center"><input type="checkbox" class="form-check-input chk-listo" ${checkboxAttrs}></td>
             <td><input type="number" min="0" step="0.1" class="form-control form-control-sm input-entrega" value="${entrega}" ${inputAttrs}></td>
+            <td>${d.categoria || 'Sin categoría'}</td>
         </tr>
     `;
 }
@@ -901,11 +926,11 @@ function buildPedidoCard(p) {
                     <thead>
                         <tr>
                             <th>Producto</th>
-                            <th>Subárea</th>
                             <th>Pedida</th>
                             <th>Stock Central</th>
                             <th>Listo</th>
                             <th>Entregar</th>
+                            <th>Categoría</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -974,6 +999,100 @@ function initAlmacen() {
         if (!select) return;
         select.addEventListener('change', () => applyInventoryFilter());
     });
+
+    const categoriasList = document.getElementById('categoriasList');
+    const unidadesList = document.getElementById('unidadesList');
+    const prodCategoria = document.getElementById('prodCategoria');
+    const prodUnidad = document.getElementById('prodUnidad');
+
+    async function handleCatalogDelete(type, id, label) {
+        const singular = type === 'categorias' ? 'categoría' : 'unidad';
+        const displayLabel = label || id;
+        if (!confirm(`Eliminar ${singular} "${displayLabel}"? Esta acción no se puede deshacer.`)) {
+            return;
+        }
+        try {
+            await requestJSON(`/api/catalogo/${type}/${id}`, { method: 'DELETE' });
+            const capitalized = singular.charAt(0).toUpperCase() + singular.slice(1);
+            showToast(`${capitalized} eliminada`, 'success');
+            await cargarCatalogosRegistrados();
+        } catch (error) {
+            const message = typeof error === 'string' ? error : error?.message;
+            showToast(message || `Error al eliminar ${singular}`, 'danger');
+        }
+    }
+
+    function renderCatalogListGroup(element, items, deleteEndpoint, emptyText) {
+        if (!element) return;
+        const list = Array.isArray(items) ? items : [];
+        if (!list.length) {
+            element.innerHTML = `<div class="list-group-item text-muted text-center">${emptyText}</div>`;
+            return;
+        }
+        element.innerHTML = list
+            .map((item) => `
+                <div class="list-group-item d-flex justify-content-between align-items-center gap-2">
+                    <span class="flex-grow-1">${item.nombre}</span>
+                    <button type="button" class="btn btn-sm btn-outline-danger" data-catalog-delete="${deleteEndpoint}" data-catalog-id="${item.id}" data-catalog-label="${item.nombre}">Eliminar</button>
+                </div>
+            `)
+            .join('');
+        element.querySelectorAll('button[data-catalog-delete]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const type = button.dataset.catalogDelete;
+                const itemId = button.dataset.catalogId;
+                const itemLabel = button.dataset.catalogLabel;
+                if (!type || !itemId) return;
+                handleCatalogDelete(type, itemId, itemLabel);
+            });
+        });
+    }
+
+    async function cargarCatalogosRegistrados() {
+        if (!categoriasList && !unidadesList && !prodCategoria && !prodUnidad && !filterCategoria && !filterUnidad) {
+            return;
+        }
+        try {
+            const [cats, unis] = await Promise.all([
+                requestJSON('/api/catalogo/categorias'),
+                requestJSON('/api/catalogo/unidades'),
+            ]);
+            const categories = Array.isArray(cats) ? cats : [];
+            const units = Array.isArray(unis) ? unis : [];
+            renderCatalogListGroup(categoriasList, categories, 'categorias', 'No hay categorías registradas.');
+            renderCatalogListGroup(unidadesList, units, 'unidades', 'No hay unidades registradas.');
+            if (filterCategoria) {
+                filterCategoria.innerHTML = `<option value="">Todas</option>${categories
+                    .map((item) => `<option value="${item.nombre}">${item.nombre}</option>`)
+                    .join('')}`;
+            }
+            if (filterUnidad) {
+                filterUnidad.innerHTML = `<option value="">Todas</option>${units
+                    .map((item) => `<option value="${item.nombre}">${item.nombre}</option>`)
+                    .join('')}`;
+            }
+            if (prodCategoria) {
+                prodCategoria.innerHTML = categories
+                    .map((item) => `<option value="${item.id}">${item.nombre}</option>`)
+                    .join('');
+            }
+            if (prodUnidad) {
+                prodUnidad.innerHTML = units
+                    .map((item) => `<option value="${item.id}">${item.nombre}</option>`)
+                    .join('');
+            }
+        } catch (error) {
+            console.warn('No se pudieron cargar categorías/unidades', error?.message || error);
+            if (categoriasList) {
+                categoriasList.innerHTML = '<div class="list-group-item text-muted text-center">No se pudieron cargar las categorías</div>';
+            }
+            if (unidadesList) {
+                unidadesList.innerHTML = '<div class="list-group-item text-muted text-center">No se pudieron cargar las unidades</div>';
+            }
+        }
+    }
+
+    cargarCatalogosRegistrados();
 
     const dateInput = document.getElementById('almacenFechaFiltro');
     const dateBtn = document.getElementById('btnAlmacenFiltrar');
