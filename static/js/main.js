@@ -846,6 +846,42 @@ async function initChecklist() {
     const modalChecklistDefaultsEl = document.getElementById('modalChecklistDefaults');
     let defaultListEntries = [];
     let defaultSuggestionList = [];
+    const subareasConfig = window.subareasConfig || {};
+    const areaOrderMap = Object.keys(subareasConfig).reduce((acc, areaId, idx) => {
+        acc[areaId] = idx;
+        return acc;
+    }, {});
+    const subareaPositionMap = Object.entries(subareasConfig).reduce((acc, [areaId, items]) => {
+        acc[areaId] = (items || []).reduce((map, item, idx) => {
+            const key = (item?.nombre || '').toString().trim().toLowerCase();
+            if (key) map[key] = idx;
+            return map;
+        }, {});
+        return acc;
+    }, {});
+
+    const normalizeSubareaName = (value) => (value || '').toString().trim().toLowerCase();
+
+    function sortDefaultListEntries(entries) {
+        const normalized = [...entries];
+        const areaFallback = Object.keys(areaOrderMap).length;
+        normalized.sort((a, b) => {
+            const areaA = a.area_id || '';
+            const areaB = b.area_id || '';
+            const rankA = areaOrderMap.hasOwnProperty(areaA) ? areaOrderMap[areaA] : areaFallback;
+            const rankB = areaOrderMap.hasOwnProperty(areaB) ? areaOrderMap[areaB] : areaFallback;
+            if (rankA !== rankB) return rankA - rankB;
+            const subMapA = subareaPositionMap[areaA] || {};
+            const subMapB = subareaPositionMap[areaB] || {};
+            const subKeyA = normalizeSubareaName(a.subarea);
+            const subKeyB = normalizeSubareaName(b.subarea);
+            const subRankA = subMapA.hasOwnProperty(subKeyA) ? subMapA[subKeyA] : Number.MAX_SAFE_INTEGER;
+            const subRankB = subMapB.hasOwnProperty(subKeyB) ? subMapB[subKeyB] : Number.MAX_SAFE_INTEGER;
+            if (subRankA !== subRankB) return subRankA - subRankB;
+            return (a.nombre_producto || '').localeCompare(b.nombre_producto || '', 'es', { sensitivity: 'base' });
+        });
+        return normalized;
+    }
 
     function renderDefaultListEntries() {
         if (!defaultListCurrent) return;
@@ -908,7 +944,7 @@ async function initChecklist() {
         if (!defaultListCurrent) return;
         try {
             const resp = await requestJSON('/api/checklist/lista');
-            defaultListEntries = Array.isArray(resp.lista) ? resp.lista : [];
+            defaultListEntries = sortDefaultListEntries(Array.isArray(resp.lista) ? resp.lista : []);
             renderDefaultListEntries();
         } catch (error) {
             showToast(error.message || 'No se pudo cargar la lista predeterminada', 'danger');
@@ -923,7 +959,10 @@ async function initChecklist() {
                 body: JSON.stringify({ id_producto: product.id_producto }),
             });
             if (resp?.producto) {
-                defaultListEntries = [...defaultListEntries.filter((entry) => entry.id_producto !== resp.producto.id_producto), resp.producto];
+                defaultListEntries = sortDefaultListEntries([
+                    ...defaultListEntries.filter((entry) => entry.id_producto !== resp.producto.id_producto),
+                    resp.producto,
+                ]);
             }
             renderDefaultListEntries();
             showToast(`${product.nombre_producto} agregado a la lista predeterminada`, 'success');
@@ -943,7 +982,7 @@ async function initChecklist() {
                 method: 'DELETE',
                 body: JSON.stringify({ id_producto: idProducto }),
             });
-            defaultListEntries = defaultListEntries.filter((entry) => entry.id_producto !== idProducto);
+            defaultListEntries = sortDefaultListEntries(defaultListEntries.filter((entry) => entry.id_producto !== idProducto));
             renderDefaultListEntries();
             showToast('Insumo removido de la lista predeterminada', 'info');
         } catch (error) {
