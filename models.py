@@ -129,6 +129,7 @@ class DetallePedido(Base):
     Check_Almacen: Mapped[int] = mapped_column(Integer, default=0)
     Cantidad_Entregada: Mapped[float] = mapped_column(Float, default=0)
     Estado_Sede: Mapped[str] = mapped_column(String, default="Pendiente")
+    Usuario_Enviado: Mapped[str] = mapped_column(String, default="sin_usuario")
 
     pedido: Mapped[ChecklistPedido] = relationship(back_populates="detalles")
 
@@ -140,6 +141,17 @@ class ChecklistProductoOculto(Base):
     ID_Area: Mapped[str] = mapped_column(ForeignKey("Areas.ID_Area"), primary_key=True)
     ID_Producto: Mapped[str] = mapped_column(ForeignKey("Productos.ID_Producto"), primary_key=True)
     Fecha_Oculto: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+class ChecklistListaPredeterminada(Base):
+    __tablename__ = "Checklist_Lista_Predeterminada"
+
+    ID_Sede: Mapped[int] = mapped_column(ForeignKey("Sedes.ID_Sede"), primary_key=True)
+    ID_Area: Mapped[str] = mapped_column(ForeignKey("Areas.ID_Area"), primary_key=True)
+    ID_Turno: Mapped[str] = mapped_column(ForeignKey("Turnos.ID_Turno"), primary_key=True)
+    ID_Producto: Mapped[str] = mapped_column(ForeignKey("Productos.ID_Producto"), primary_key=True)
+    Orden: Mapped[int] = mapped_column(Integer, default=0)
+    Fecha_Creacion: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
 
 class ChecklistHistorico(Base):
@@ -196,6 +208,8 @@ def init_db(engine) -> None:
         detalle_columns = [col["name"] for col in inspector.get_columns("Detalle_Pedido")]
         if "Estado_Sede" not in detalle_columns:
             conn.execute(text("ALTER TABLE Detalle_Pedido ADD COLUMN Estado_Sede TEXT DEFAULT 'Pendiente'"))
+        if "Usuario_Enviado" not in detalle_columns:
+            conn.execute(text("ALTER TABLE Detalle_Pedido ADD COLUMN Usuario_Enviado TEXT DEFAULT 'sin_usuario'"))
         conn.commit()
 
 

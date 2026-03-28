@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import json
+import pytz
 from datetime import datetime, date, time, timedelta
 from io import BytesIO
 import re
@@ -28,6 +29,7 @@ from models import (
     Sede,
     Turno,
     Unidad,
+    ChecklistListaPredeterminada,
     CierreCaja,
     Movimiento,
     UsuarioGestion,
@@ -77,6 +79,12 @@ SUBAREA_POSITION: dict[str, dict[str, int]] = {
 }
 
 engine = get_engine(database_url)
+
+PERU_TIMEZONE = pytz.timezone("America/Lima")
+
+
+def ahora_peru() -> datetime:
+    return datetime.now(PERU_TIMEZONE)
 
 CREATION_PASSWORD_KEY = "creation_password"
 DEFAULT_CREATION_PASSWORD = os.getenv("CHECKLIST_CREATION_PASSWORD", "almacen123")
@@ -278,6 +286,35 @@ def _release_session_slot() -> None:
         ACTIVE_SESSION_TOKENS.pop(token, None)
 
 
+def _get_checklist_context() -> dict[str, int | str] | None:
+    id_sede = session.get("id_sede")
+    id_area = session.get("id_area")
+    id_turno = session.get("id_turno")
+    if not id_sede or not id_area or not id_turno:
+        return None
+    return {
+        "id_sede": id_sede,
+        "id_area": id_area,
+        "id_turno": id_turno,
+        "id_usuario": session.get("id_usuario"),
+    }
+
+
+def _format_default_checklist_entry(entry: ChecklistListaPredeterminada, db: Session) -> dict[str, object]:
+    producto = db.get(Producto, entry.ID_Producto)
+    nombre = producto.Nombre_Producto if producto else entry.ID_Producto
+    subarea = producto.Subarea if producto else ""
+    unidad = None
+    if producto and producto.ID_Unidad:
+        unidad = db.get(Unidad, producto.ID_Unidad)
+    return {
+        "id_producto": entry.ID_Producto,
+        "nombre_producto": nombre,
+        "subarea": subarea or "Sin subárea",
+        "subarea_badge": subarea_badge(producto.ID_Area if producto else None, subarea) if producto else "bg-secondary",
+        "area_id": producto.ID_Area if producto else None,
+        "unidad": unidad.Nombre_Unidad if unidad else None,
+    }
 def find_user_entry(username: str, password: str, groups: str | list[str] | None = None) -> UserEntry | None:
     username = username.strip()
     password = password.strip()
@@ -480,7 +517,7 @@ def get_or_create_pedido(db: Session, ctx: dict[str, int | str], fecha_filtro: d
         ID_Turno=ctx["id_turno"],
         ID_Area=ctx["id_area"],
         ID_Usuario=ctx.get("id_usuario", "sin_usuario"),
-        Fecha=fecha_filtro or datetime.now(),
+        Fecha=fecha_filtro or ahora_peru(),
     )
     db.add(pedido)
     db.flush()
@@ -498,7 +535,7 @@ def obtener_fecha_checklist() -> datetime:
             parsed = None
         if parsed:
             return parsed
-    ahora = datetime.now()
+    ahora = ahora_peru()
     return ahora
 
 
@@ -933,7 +970,7 @@ def checklist():
         if parsed:
             fecha_filtro = parsed
     if fecha_filtro is None:
-        fecha_filtro = datetime.now()
+        fecha_filtro = ahora_peru()
     fecha_filtro = fecha_filtro.replace(hour=0, minute=0, second=0, microsecond=0)
     fecha_anterior = fecha_filtro - timedelta(days=1)
     session["checklist_fecha"] = fecha_filtro.isoformat()
@@ -959,7 +996,7 @@ def checklist():
             admin_turnos = db.scalars(select(Turno).order_by(Turno.Nombre_Turno)).all()
             admin_areas = db.scalars(select(Area).order_by(Area.Nombre_Area)).all()
 
-    now = datetime.now()
+    now = ahora_peru()
     fecha_seleccionada = pedido.Fecha or fecha_filtro or now
     selected_date_label = fecha_seleccionada.strftime("%d/%m/%Y")
     selected_time_label = fecha_seleccionada.strftime("%H:%M")
@@ -1005,7 +1042,7 @@ def cierre_caja():
         except ValueError:
             selected_date = None
     if not selected_date:
-        selected_date = datetime.now().date()
+        selected_date = ahora_peru().date()
 
     is_admin = session.get("perfil") == "admin"
     movimientos_only = bool(session.get("movimientos_only"))
@@ -1218,6 +1255,20 @@ def checklist_items():
                 select(DetallePedido).where(DetallePedido.ID_Pedido == pedido.ID_Pedido)
             ).all()
         }
+        default_entries = db.scalars(
+            select(ChecklistListaPredeterminada)
+            .where(
+                ChecklistListaPredeterminada.ID_Sede == ctx["id_sede"],
+                ChecklistListaPredeterminada.ID_Area == ctx["id_area"],
+                ChecklistListaPredeterminada.ID_Turno == ctx["id_turno"],
+            )
+            .order_by(ChecklistListaPredeterminada.Orden, ChecklistListaPredeterminada.ID_Producto)
+        ).all()
+        default_product_ids = [entry.ID_Producto for entry in default_entries]
+        default_order_map = {pid: idx for idx, pid in enumerate(default_product_ids)}
+        visible_product_ids = set(default_product_ids)
+        if detalles:
+            visible_product_ids.update(detalles.keys())
         ocultos = set(
             db.scalars(
                 select(ChecklistProductoOculto.ID_Producto).where(
@@ -1228,14 +1279,15 @@ def checklist_items():
                 )
             ).all()
         )
-        productos = db.scalars(
-            select(Producto).where(
-                and_(
-                    Producto.Estado == "Activo",
-                    Producto.ID_Area == id_area,
-                )
+        productos_query = select(Producto).where(
+            and_(
+                Producto.Estado == "Activo",
+                Producto.ID_Area == id_area,
             )
-        ).all()
+        )
+        if default_product_ids:
+            productos_query = productos_query.where(Producto.ID_Producto.in_(visible_product_ids))
+        productos = db.scalars(productos_query).all()
         result = []
         for p in productos:
             if p.ID_Producto in ocultos:
@@ -1261,11 +1313,15 @@ def checklist_items():
                     "area_id": p.ID_Area,
                 }
             )
-        def sort_key(item: dict[str, str | int | None]) -> tuple[int, int, str]:
+        def sort_key(item: dict[str, str | int | None]) -> tuple[int, int, int, str]:
+            product_id = item.get("id_producto")
+            default_rank = default_order_map.get(product_id)
+            if default_rank is not None:
+                return 0, default_rank, 0, ""
             area_rank = AREA_ORDER.get(item.get("area_id"), len(AREA_ORDER))
             sub_map = SUBAREA_POSITION.get(item.get("area_id"), {})
             sub_rank = sub_map.get(normalize_subarea_name(item.get("subarea")), len(sub_map))
-            return area_rank, sub_rank, item.get("nombre_producto", "") or ""
+            return 1, area_rank, sub_rank, item.get("nombre_producto", "") or ""
         result.sort(key=sort_key)
     return jsonify(result)
 
@@ -1322,6 +1378,101 @@ def checklist_catalogo():
             return area_rank, sub_rank, item.get("nombre_producto", "") or ""
         result.sort(key=sort_key)
     return jsonify(result)
+
+
+@app.get("/api/checklist/lista")
+def checklist_lista_default():
+    if not _is_sede_or_admin_profile():
+        return jsonify({"error": "No autorizado"}), 401
+
+    ctx = _get_checklist_context()
+    if not ctx:
+        return jsonify({"error": "Contexto incompleto"}), 400
+
+    with Session(engine) as db:
+        entries = db.scalars(
+            select(ChecklistListaPredeterminada)
+            .where(
+                ChecklistListaPredeterminada.ID_Sede == ctx["id_sede"],
+                ChecklistListaPredeterminada.ID_Area == ctx["id_area"],
+                ChecklistListaPredeterminada.ID_Turno == ctx["id_turno"],
+            )
+            .order_by(ChecklistListaPredeterminada.Orden, ChecklistListaPredeterminada.ID_Producto)
+        ).all()
+        lista = [_format_default_checklist_entry(entry, db) for entry in entries]
+    return jsonify({"lista": lista})
+
+
+@app.post("/api/checklist/lista")
+def agregar_a_lista_checklist():
+    if not _is_sede_or_admin_profile():
+        return jsonify({"error": "No autorizado"}), 401
+
+    ctx = _get_checklist_context()
+    if not ctx:
+        return jsonify({"error": "Contexto incompleto"}), 400
+
+    payload = request.get_json(force=True) or {}
+    id_producto = payload.get("id_producto")
+    if not id_producto:
+        return jsonify({"error": "Producto requerido"}), 400
+
+    with Session(engine) as db:
+        producto = db.get(Producto, id_producto)
+        if not producto:
+            return jsonify({"error": "Producto no encontrado"}), 404
+        existing = db.get(
+            ChecklistListaPredeterminada,
+            (ctx["id_sede"], ctx["id_area"], ctx["id_turno"], id_producto),
+        )
+        if existing:
+            return jsonify({"error": "Ese insumo ya está en la lista"}), 400
+        orden = db.scalar(
+            select(func.count()).select_from(ChecklistListaPredeterminada).where(
+                ChecklistListaPredeterminada.ID_Sede == ctx["id_sede"],
+                ChecklistListaPredeterminada.ID_Area == ctx["id_area"],
+                ChecklistListaPredeterminada.ID_Turno == ctx["id_turno"],
+            )
+        )
+        nueva = ChecklistListaPredeterminada(
+            ID_Sede=ctx["id_sede"],
+            ID_Area=ctx["id_area"],
+            ID_Turno=ctx["id_turno"],
+            ID_Producto=id_producto,
+            Orden=(orden or 0),
+        )
+        db.add(nueva)
+        db.commit()
+        db.refresh(nueva)
+        respuesta = _format_default_checklist_entry(nueva, db)
+    return jsonify({"ok": True, "producto": respuesta})
+
+
+@app.delete("/api/checklist/lista")
+def eliminar_de_lista_checklist():
+    if not _is_sede_or_admin_profile():
+        return jsonify({"error": "No autorizado"}), 401
+
+    ctx = _get_checklist_context()
+    if not ctx:
+        return jsonify({"error": "Contexto incompleto"}), 400
+
+    payload = request.get_json(force=True) or {}
+    id_producto = payload.get("id_producto")
+    if not id_producto:
+        return jsonify({"error": "Producto requerido"}), 400
+
+    with Session(engine) as db:
+        entry = db.get(
+            ChecklistListaPredeterminada,
+            (ctx["id_sede"], ctx["id_area"], ctx["id_turno"], id_producto),
+        )
+        if not entry:
+            return jsonify({"error": "Item no encontrado"}), 404
+        db.delete(entry)
+        db.commit()
+
+    return jsonify({"ok": True})
 
 
 @app.post("/api/pedidos/solicitar")
@@ -1737,7 +1888,7 @@ def almacen():
         except ValueError:
             selected_date = None
     if not selected_date:
-        selected_date = datetime.now().date()
+        selected_date = ahora_peru().date()
     selected_date_input = selected_date.strftime("%Y-%m-%d")
     selected_date_label = selected_date.strftime("%d/%m/%Y")
     movimientos_only = bool(session.get("movimientos_only"))
@@ -1909,7 +2060,7 @@ def pedidos_almacen():
         except ValueError:
             fecha_obj = None
     if not fecha_obj:
-        fecha_obj = datetime.now().date()
+        fecha_obj = ahora_peru().date()
     inicio = datetime.combine(fecha_obj, time.min)
     fin = datetime.combine(fecha_obj, time.max)
 
@@ -1927,6 +2078,10 @@ def pedidos_almacen():
             for d in detalles:
                 producto = db.get(Producto, d.ID_Producto)
                 stock_central = db.get(InventarioSede, (CENTRAL_SEDE_ID, d.ID_Producto))
+                categoria_nombre = None
+                if producto and producto.ID_Categoria:
+                    categoria_obj = db.get(Categoria, producto.ID_Categoria)
+                    categoria_nombre = categoria_obj.Nombre_Categoria if categoria_obj else None
                 det_data.append(
                     {
                         "id_detalle": d.ID_Detalle,
@@ -1940,6 +2095,7 @@ def pedidos_almacen():
                         "cantidad_entregada": d.Cantidad_Entregada,
                         "estado_sede": d.Estado_Sede,
                         "stock_central": stock_central.Stock_Actual if stock_central else 0,
+                        "categoria": categoria_nombre,
                     }
                 )
 
@@ -1974,7 +2130,7 @@ def envios_procesados():
         except ValueError:
             fecha_obj = None
     if not fecha_obj:
-        fecha_obj = datetime.now().date()
+        fecha_obj = ahora_peru().date()
     inicio = datetime.combine(fecha_obj, time.min)
     fin = datetime.combine(fecha_obj, time.max)
 
@@ -2009,6 +2165,7 @@ def envios_procesados():
                         "producto": producto.Nombre_Producto if producto else d.ID_Producto,
                         "cantidad_pedida": d.Cantidad_Pedida,
                         "cantidad_entregada": d.Cantidad_Entregada,
+                        "enviado_por": d.Usuario_Enviado or "",
                         "fecha": (p.Fecha.isoformat() if p.Fecha else None),
                     }
                 )
@@ -2030,7 +2187,7 @@ def listar_movimientos_almacen():
         except ValueError:
             fecha_obj = None
     if not fecha_obj:
-        fecha_obj = datetime.now().date()
+        fecha_obj = ahora_peru().date()
     inicio = datetime.combine(fecha_obj, time.min)
     fin = datetime.combine(fecha_obj, time.max)
 
@@ -2075,7 +2232,7 @@ def alertas_llegadas():
         except ValueError:
             fecha_obj = None
     if not fecha_obj:
-        fecha_obj = datetime.now().date()
+        fecha_obj = ahora_peru().date()
     inicio = datetime.combine(fecha_obj, time.min)
     fin = datetime.combine(fecha_obj, time.max)
 
@@ -2136,6 +2293,7 @@ def procesar_envio():
     payload = request.get_json(force=True)
     pedido_id = int(payload.get("pedido_id"))
     movimientos = payload.get("detalles", [])
+    usuario_envio = session.get("id_usuario") or "sin_usuario"
 
     if not movimientos:
         return jsonify({"error": "No hay insumos seleccionados"}), 400
@@ -2167,6 +2325,7 @@ def procesar_envio():
 
                     detalle.Check_Almacen = 1
                     detalle.Cantidad_Entregada = cantidad_entregada
+                    detalle.Usuario_Enviado = usuario_envio
 
                     if cantidad_entregada > 0:
                         inv_central = db.get(InventarioSede, (CENTRAL_SEDE_ID, detalle.ID_Producto))
@@ -2222,6 +2381,25 @@ def crear_categoria():
         return jsonify({"ok": True, "id_categoria": categoria.ID_Categoria})
 
 
+@app.delete("/api/catalogo/categorias/<int:id_categoria>")
+def eliminar_categoria(id_categoria: int):
+    if not _is_almacen_or_admin_profile():
+        return jsonify({"error": "No autorizado"}), 401
+
+    with Session(engine) as db:
+        categoria = db.get(Categoria, id_categoria)
+        if not categoria:
+            return jsonify({"error": "Categoría no encontrada"}), 404
+        productos_asociados = db.scalar(
+            select(func.count()).select_from(Producto).where(Producto.ID_Categoria == id_categoria)
+        )
+        if productos_asociados:
+            return jsonify({"error": "No se puede eliminar: hay productos asociados"}), 400
+        db.delete(categoria)
+        db.commit()
+    return jsonify({"ok": True})
+
+
 @app.post("/api/catalogo/unidades")
 def crear_unidad():
     if not _is_almacen_or_admin_profile():
@@ -2236,6 +2414,25 @@ def crear_unidad():
         db.add(unidad)
         db.commit()
         return jsonify({"ok": True, "id_unidad": unidad.ID_Unidad})
+
+
+@app.delete("/api/catalogo/unidades/<int:id_unidad>")
+def eliminar_unidad(id_unidad: int):
+    if not _is_almacen_or_admin_profile():
+        return jsonify({"error": "No autorizado"}), 401
+
+    with Session(engine) as db:
+        unidad = db.get(Unidad, id_unidad)
+        if not unidad:
+            return jsonify({"error": "Unidad no encontrada"}), 404
+        productos_asociados = db.scalar(
+            select(func.count()).select_from(Producto).where(Producto.ID_Unidad == id_unidad)
+        )
+        if productos_asociados:
+            return jsonify({"error": "No se puede eliminar: hay productos asociados"}), 400
+        db.delete(unidad)
+        db.commit()
+    return jsonify({"ok": True})
 
 
 @app.get('/api/catalogo/categorias')
