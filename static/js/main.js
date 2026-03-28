@@ -839,6 +839,171 @@ async function initChecklist() {
         });
     }
 
+    const defaultListSearch = document.getElementById('defaultListSearch');
+    const defaultListSuggestions = document.getElementById('defaultListSuggestions');
+    const defaultListCurrent = document.getElementById('defaultListCurrent');
+    const defaultListCount = document.getElementById('defaultListCount');
+    const modalChecklistDefaultsEl = document.getElementById('modalChecklistDefaults');
+    let defaultListEntries = [];
+    let defaultSuggestionList = [];
+
+    function renderDefaultListEntries() {
+        if (!defaultListCurrent) return;
+        if (!defaultListEntries.length) {
+            defaultListCurrent.innerHTML = '<div class="list-group-item text-muted">No hay insumos guardados todavía.</div>';
+        } else {
+            defaultListCurrent.innerHTML = defaultListEntries
+                .map((item) => `
+                    <div class="list-group-item d-flex justify-content-between align-items-center gap-3">
+                        <div>
+                            <div class="fw-semibold mb-1">${item.nombre_producto}</div>
+                            <div class="small text-muted">${item.subarea || 'Sin subárea'}</div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-danger" data-default-remove="${item.id_producto}">Eliminar</button>
+                    </div>
+                `)
+                .join('');
+        }
+        if (defaultListCount) {
+            const label = defaultListEntries.length === 1
+                ? '1 insumo guardado'
+                : `${defaultListEntries.length} insumos guardados`;
+            defaultListCount.textContent = label;
+        }
+    }
+
+    function filterDefaultListCandidates(query) {
+        const normalized = (query || '').toLowerCase();
+        const excluded = new Set(defaultListEntries.map((entry) => entry.id_producto));
+        const catalogSource = window.catalogItems || [];
+        return catalogSource.filter((product) => (
+            product.nombre_producto
+            && !excluded.has(product.id_producto)
+            && product.nombre_producto.toLowerCase().includes(normalized)
+        ));
+    }
+
+    function clearDefaultListSuggestions() {
+        defaultSuggestionList = [];
+        if (!defaultListSuggestions) return;
+        defaultListSuggestions.innerHTML = '';
+        defaultListSuggestions.classList.add('d-none');
+    }
+
+    function renderDefaultListSuggestions(list) {
+        if (!defaultListSuggestions) return;
+        defaultSuggestionList = list;
+        if (!list.length) {
+            defaultListSuggestions.innerHTML = '';
+            defaultListSuggestions.classList.add('d-none');
+            return;
+        }
+        defaultListSuggestions.classList.remove('d-none');
+        defaultListSuggestions.innerHTML = list
+            .map((product) => `<button type="button" class="list-group-item list-group-item-action" data-default-product="${product.id_producto}" data-default-name="${product.nombre_producto}">${product.nombre_producto}</button>`)
+            .join('');
+    }
+
+    async function refreshDefaultList() {
+        if (!defaultListCurrent) return;
+        try {
+            const resp = await requestJSON('/api/checklist/lista');
+            defaultListEntries = Array.isArray(resp.lista) ? resp.lista : [];
+            renderDefaultListEntries();
+        } catch (error) {
+            showToast(error.message || 'No se pudo cargar la lista predeterminada', 'danger');
+        }
+    }
+
+    async function handleDefaultSuggestionSelect(product) {
+        if (!product || !product.id_producto) return;
+        try {
+            const resp = await requestJSON('/api/checklist/lista', {
+                method: 'POST',
+                body: JSON.stringify({ id_producto: product.id_producto }),
+            });
+            if (resp?.producto) {
+                defaultListEntries = [...defaultListEntries.filter((entry) => entry.id_producto !== resp.producto.id_producto), resp.producto];
+            }
+            renderDefaultListEntries();
+            showToast(`${product.nombre_producto} agregado a la lista predeterminada`, 'success');
+            if (defaultListSearch) defaultListSearch.value = '';
+            clearDefaultListSuggestions();
+            await cargarChecklistItems();
+            renderArrivalPanel();
+        } catch (error) {
+            showToast(error.message || 'No se pudo agregar el insumo', 'danger');
+        }
+    }
+
+    async function handleDefaultListRemoval(idProducto) {
+        if (!idProducto) return;
+        try {
+            await requestJSON('/api/checklist/lista', {
+                method: 'DELETE',
+                body: JSON.stringify({ id_producto: idProducto }),
+            });
+            defaultListEntries = defaultListEntries.filter((entry) => entry.id_producto !== idProducto);
+            renderDefaultListEntries();
+            showToast('Insumo removido de la lista predeterminada', 'info');
+        } catch (error) {
+            showToast(error.message || 'No se pudo eliminar el insumo', 'danger');
+        }
+    }
+
+    if (defaultListSearch) {
+        defaultListSearch.addEventListener('input', (event) => {
+            const candidates = filterDefaultListCandidates(event.target.value);
+            renderDefaultListSuggestions(candidates);
+        });
+        defaultListSearch.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                if (defaultSuggestionList.length) {
+                    handleDefaultSuggestionSelect(defaultSuggestionList[0]);
+                } else if (defaultListSearch.value) {
+                    const candidates = filterDefaultListCandidates(defaultListSearch.value);
+                    if (candidates.length) {
+                        handleDefaultSuggestionSelect(candidates[0]);
+                    }
+                }
+            } else if (event.key === 'Escape') {
+                clearDefaultListSuggestions();
+            }
+        });
+        defaultListSearch.addEventListener('blur', () => setTimeout(clearDefaultListSuggestions, 150));
+    }
+
+    if (defaultListSuggestions) {
+        defaultListSuggestions.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-default-product]');
+            if (!button) return;
+            const productId = button.dataset.defaultProduct;
+            const productName = button.dataset.defaultName;
+            const product = (window.catalogItems || []).find((item) => item.id_producto === productId || item.nombre_producto === productName);
+            if (product) {
+                handleDefaultSuggestionSelect(product);
+            } else {
+                showToast('No se pudo identificar el insumo.', 'warning');
+            }
+        });
+    }
+
+    if (defaultListCurrent) {
+        defaultListCurrent.addEventListener('click', (event) => {
+            const removeBtn = event.target.closest('[data-default-remove]');
+            if (!removeBtn) return;
+            handleDefaultListRemoval(removeBtn.dataset.defaultRemove);
+        });
+    }
+
+    if (modalChecklistDefaultsEl) {
+        modalChecklistDefaultsEl.addEventListener('shown.bs.modal', () => {
+            refreshDefaultList();
+        });
+    }
+    renderDefaultListEntries();
+
     // inicializar selects
     cargarCategoriasYUnidades();
 }
